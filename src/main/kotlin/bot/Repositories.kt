@@ -69,15 +69,18 @@ interface UserRepository : BaseRepository<User> {
             and language in (:language)
     """, nativeQuery = true
     )
-    fun findOperatorLanguage(language: String): String?
+    fun findExactOperatorByLanguage(@Param("language") language: String): String?
+
 
     @Query(
         value = """
-        select chat_id
-          from users
-            where role = 'USER' 
-            and language in (:language)
-    """, nativeQuery = true
+        SELECT u.chat_id
+        FROM users u
+        JOIN user_languages ul ON u.id = ul.user_chat_id
+        WHERE u.role = 'USER'
+        AND ul.languages = :language
+    """,
+        nativeQuery = true
     )
     fun findUserByLanguage(language: String): String?
 
@@ -214,5 +217,8 @@ interface OperatorUsersRepository : JpaRepository<OperatorUsers, Long> {
         nativeQuery = true
     )
     fun hasActiveSession(operatorChatId: String, userChatId: String): Boolean
+
+    @Query(value = "select languages from user_languages where user_chat_id= :id", nativeQuery = true)
+    fun findLanguagesOperator(id: Long): List<String>
 
 }
