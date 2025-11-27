@@ -56,11 +56,11 @@ enum class BotMessage(
     ),
     PHONE_ANSWER_TEXT(
         uzb = "❌ Iltimos, telefon raqamingizni pastdagi tugma orqali yuboring!\n\n" +
-                "📱 'Telefon raqamni yuborish' tugmasini bosing.",
+                "📱 **'Kontaktni ulashish'** tugmasini bosing.",
         rus = "❌ Пожалуйста, отправьте свой номер телефона с помощью кнопки ниже!\n\n" +
-                "\uD83D\uDCF1 Нажмите кнопку «Отправить номер телефона».\n",
+                "\uD83D\uDCF1 Нажмите кнопку **«Поделиться контактом»**.\n",
         eng = "❌ Please send your phone number using the button below!\n\n" +
-                "\uD83D\uDCF1 Press the 'Send Phone Number' button.\n"
+                "\uD83D\uDCF1 Press the **'Share Contact'** button.\n"
     ),
     OPERATOR_JOINED(
         uzb = "Hurmatli mijoz, operator siz bilan bog'landi.\nSavolingizni berishingiz mumkin!",
@@ -88,14 +88,19 @@ enum class BotMessage(
         eng = "How many languages do you work with? 🌍"
     ),
     OPERATOR_SELECT_LANGUAGES(
-        uzb = "Tillarni tanlang: (Tanlangan: {count}/{total})",
-        rus = "Выберите языки: (Выбрано: {count}/{total})",
-        eng = "Select languages: (Selected: {count}/{total})"
+        uzb = "Tillarni tanlang: (Tanlangan: {total})",
+        rus = "Выберите языки: (Выбрано: {total})",
+        eng = "Select languages: (Selected: {total})"
     ),
     OPERATOR_CONFIRM_LANGUAGE(
         uzb = "✅ Tasdiqlamoq",
         rus = "✅ Подтвердить",
         eng = "✅ To confirm"
+    ),
+    OPERATOR_ANSWER_USERS_NOT_ONLINE(
+        uzb = "Hozir faol userlar yo'q!",
+        rus = "Сейчас активных пользователей нет!",
+        eng = "There are no active users right now!"
     ),
     OPERATOR_LANGUAGES_SAVED(
         uzb = "✅ Tillar saqlandi! Endi /begin bosib ishlashni boshlang.",

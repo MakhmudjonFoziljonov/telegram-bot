@@ -11,6 +11,7 @@ import org.springframework.data.jpa.repository.support.JpaEntityInformation
 import org.springframework.data.jpa.repository.support.SimpleJpaRepository
 import org.springframework.data.repository.NoRepositoryBean
 import org.springframework.data.repository.findByIdOrNull
+import org.springframework.data.repository.query.Param
 import org.springframework.transaction.annotation.Transactional
 
 @NoRepositoryBean
@@ -74,7 +75,7 @@ interface UserRepository : BaseRepository<User> {
         value = """
         select chat_id
           from users
-            where role = 'USER' and busy is true
+            where role = 'USER' 
             and language in (:language)
     """, nativeQuery = true
     )
@@ -119,6 +120,31 @@ interface UserRepository : BaseRepository<User> {
     )
     fun addOperatorLanguage(chatId: String, language: String)
 
+    @Query(
+        value = """
+        SELECT u.chat_id
+        FROM users u
+        JOIN user_languages ul ON u.id = ul.user_chat_id
+        WHERE u.role = 'OPERATOR'
+            AND u.deleted = false
+            AND u.busy = false
+            AND ul.languages = :language
+        ORDER BY u.created_date ASC
+        LIMIT 1
+    """, nativeQuery = true
+    )
+    fun findAvailableOperatorByLanguage(language: String): String?
+
+    @Query(
+        value = """
+        SELECT ou.user_chat_id
+        FROM operator_users ou
+        WHERE ou.operator_chat_id = :operatorChatId
+            AND ou.session = true
+    """, nativeQuery = true
+    )
+    fun findActiveUsersByOperator(operatorChatId: String): List<String>
+
 }
 
 interface OperatorUsersRepository : JpaRepository<OperatorUsers, Long> {
@@ -126,9 +152,16 @@ interface OperatorUsersRepository : JpaRepository<OperatorUsers, Long> {
     @Query(
         value = "select * from operator_users " +
                 "where  operator_chat_id = :operatorChatId " +
-                "and user_chat_id = :userChatId and session is true ", nativeQuery = true
+                "and user_chat_id = :userChatId", nativeQuery = true
     )
-    fun find(operatorChatId: String, userChatId: String): OperatorUsers?
+    fun find(@Param("operatorChatId") operatorChatId: String,
+             @Param("userChatId") userChatId: String): OperatorUsers?
+
+    @Modifying
+    @Transactional
+    @Query("UPDATE operator_users SET session = false WHERE id = :id", nativeQuery = true)
+    fun deactivateById(@Param("id") id: Long): Int
+
 
     @Query(
         value = """
@@ -151,5 +184,5 @@ interface OperatorUsersRepository : JpaRepository<OperatorUsers, Long> {
         """,
         nativeQuery = true
     )
-    fun updateSession(operatorChatId: String)
+    fun updateSession(@Param("operatorChatId") operatorChatId: String) : Int
 }
