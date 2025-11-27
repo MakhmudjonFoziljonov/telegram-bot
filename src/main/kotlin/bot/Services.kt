@@ -64,7 +64,7 @@ class TelegramBotImpl(
             }
 
             if (user.role != Role.OPERATOR) {
-                handleRegularUserMessage(user, text, chatIdStr, message)
+                handleRegularUserMessage(user, text, chatIdStr)
             } else {
                 handleOperatorResponse(user, text)
             }
@@ -114,24 +114,43 @@ class TelegramBotImpl(
         user: User,
         text: String,
         chatId: String,
-        message: Message
     ) {
-        val operatorChatId = userRepository.findOperatorLanguage(user.language.name)
+        val userChatId = user.chatId;
+        val language = user.language
 
-        operatorChatId?.let {
-            sendMessageToOperator(it, text)
-            saveOperatorUserRelationIfNotExists(it, chatId)
-        } ?: sendMessageToUser(text, message, chatId)
+        when (text) {
 
-        val operatorChatId_v2 = userRepository
+            "/help" -> {
+                sendLocalizedMessage(userChatId, BotMessage.HELP_TEXT, language)
+                return
+            }
+
+            "/end" -> {
+                operatorUsersRepository.updateSession(null, userChatId)
+                sendLocalizedMessage(userChatId, BotMessage.END_SESSION, language)
+                return
+            }
+        }
+        val operatorChatIdV2 = userRepository
             .findAvailableOperatorByLanguage(user.language.name)
-//
-//        if (operatorChatId_v2 == null) {
-//            sendLocalizedMessage(chatId, BotMessage.NO_OPERATOR_AVAILABLE, ...)
-//        } else {
-//            saveOperatorUserRelationIfNotExists(operatorChatId, chatId)
-//            sendMessageToOperator(operatorChatId, text)
-//        }
+
+        if (operatorChatIdV2 == null) {
+            sendLocalizedMessage(chatId, BotMessage.NO_OPERATOR_AVAILABLE, user.language)
+        } else {
+            val hasActiveSession = operatorUsersRepository.hasActiveSession(operatorChatIdV2, user.chatId)
+
+            if (hasActiveSession) {
+                val operatorMessage = """
+            📩 Xabar: $text
+            👤 User: ${user.phoneNumber}
+        """.trimIndent()
+
+                sendMessageToOperator(operatorChatIdV2, operatorMessage)
+                sendLocalizedMessage(chatId, BotMessage.MESSAGE_SENT_TO_OPERATOR, user.language)
+            } else {
+                sendLocalizedMessage(chatId, BotMessage.OPERATOR_OFFLINE, user.language)
+            }
+        }
     }
 
     private fun saveOperatorUserRelationIfNotExists(
@@ -153,28 +172,6 @@ class TelegramBotImpl(
         } else {
             obj.session = true
             operatorUsersRepository.save(obj)
-        }
-    }
-
-    private fun sendMessageToUser(text: String, message: Message, chatId: String) {
-        when (text) {
-            "/start" -> {
-                val name = message.chat.firstName ?: ""
-                val welcome = BotMessage.WELCOME_MESSAGE.getText(Language.UZB, "name" to name)
-
-                startMessage(chatId, welcome)
-                log.info("Received message: $text from $name ${message.chat.lastName ?: ""}")
-            }
-
-            "/help" -> {
-                sendLocalizedMessage(chatId, BotMessage.HELP_TEXT, Language.UZB)
-                return
-            }
-
-            "/end" -> {
-                sendLocalizedMessage(chatId, BotMessage.END_SESSION, Language.UZB)
-                return
-            }
         }
     }
 
@@ -225,7 +222,7 @@ class TelegramBotImpl(
             "/end" -> {
                 notifyOperatorOnWorkEnd(operatorId)
                 userRepository.updateBusyEndByChatId(operatorId)
-                operatorUsersRepository.updateSession(operatorId)
+                operatorUsersRepository.updateSession(operatorId, null)
                 log.info("Operator with $operatorId ended work")
                 return
             }

@@ -127,7 +127,7 @@ interface UserRepository : BaseRepository<User> {
         JOIN user_languages ul ON u.id = ul.user_chat_id
         WHERE u.role = 'OPERATOR'
             AND u.deleted = false
-            AND u.busy = false
+            AND u.busy = true
             AND ul.languages = :language
         ORDER BY u.created_date ASC
         LIMIT 1
@@ -145,6 +145,14 @@ interface UserRepository : BaseRepository<User> {
     )
     fun findActiveUsersByOperator(operatorChatId: String): List<String>
 
+    @Query(
+        value = "SELECT session FROM operator_users " +
+                "WHERE operator_chat_id = :operatorChatId AND user_chat_id = :userChatId ",
+        nativeQuery = true
+    )
+    fun findSession(operatorChatId: String, userChatId: String): Boolean?
+
+
 }
 
 interface OperatorUsersRepository : JpaRepository<OperatorUsers, Long> {
@@ -154,8 +162,10 @@ interface OperatorUsersRepository : JpaRepository<OperatorUsers, Long> {
                 "where  operator_chat_id = :operatorChatId " +
                 "and user_chat_id = :userChatId", nativeQuery = true
     )
-    fun find(@Param("operatorChatId") operatorChatId: String,
-             @Param("userChatId") userChatId: String): OperatorUsers?
+    fun find(
+        @Param("operatorChatId") operatorChatId: String,
+        @Param("userChatId") userChatId: String
+    ): OperatorUsers?
 
     @Modifying
     @Transactional
@@ -178,11 +188,31 @@ interface OperatorUsersRepository : JpaRepository<OperatorUsers, Long> {
     @Transactional
     @Query(
         value = """
-            UPDATE operator_users SET session = false
-            WHERE operator_chat_id = :operatorChatId
-            AND session = true
-        """,
+    UPDATE operator_users
+    SET session = false
+    WHERE (
+      (:operatorChatId IS NOT NULL AND operator_chat_id = :operatorChatId)
+      OR
+      (:userChatId IS NOT NULL AND user_chat_id = :userChatId)
+    )
+    AND session = true
+  """,
         nativeQuery = true
     )
-    fun updateSession(@Param("operatorChatId") operatorChatId: String) : Int
+    fun updateSession(
+        @Param("operatorChatId") operatorChatId: String?,
+        @Param("userChatId") userChatId: String?
+    )
+
+    @Query(
+        value = """
+        SELECT COUNT(*) > 0 FROM operator_users
+        WHERE operator_chat_id = :operatorChatId 
+        AND user_chat_id = :userChatId 
+        AND session = true
+    """,
+        nativeQuery = true
+    )
+    fun hasActiveSession(operatorChatId: String, userChatId: String): Boolean
+
 }

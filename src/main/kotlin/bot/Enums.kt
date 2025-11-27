@@ -78,9 +78,19 @@ enum class BotMessage(
         eng = "Thank you for your work!"
     ),
     NO_OPERATOR_AVAILABLE(
-        uzb = "❌ Hozirda operator mavjud emas. Iltimos, keyinroq urinib ko'ring.",
-        rus = "❌ В данный момент операторы недоступны. Пожалуйста, попробуйте позже.",
-        eng = "❌ No operators available at the moment. Please try again later."
+        uzb = " Hozirda operator mavjud emas. Operatorning o'rtacha javob vaqti: 5 daq",
+        rus = " В данный момент оператор недоступен. Среднее время ответа оператора: 5 мин.",
+        eng = " No operator is available at the moment. The operator's average response time is 5 min."
+    ),
+    OPERATOR_OFFLINE(
+        uzb = " Operator hozirda offline. Iltimos, keyinroq urinib ko'ring.",
+        rus = " Оператор сейчас не в сети. Пожалуйста, попробуйте позже.",
+        eng = " Operator is currently offline. Please try again later."
+    ),
+    MESSAGE_SENT_TO_OPERATOR(
+        uzb = "✅ Xabaringiz operatorga yuborildi. Iltimos, javobni kuting...",
+        rus = "✅ Ваше сообщение отправлено оператору. Пожалуйста, ожидайте ответа...",
+        eng = "✅ Your message has been sent to the operator. Please wait for a response..."
     ),
     OPERATOR_SELECT_LANGUAGE_COUNT(
         uzb = "Nechta tilda ishlaysiz? 🌍",
