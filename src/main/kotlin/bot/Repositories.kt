@@ -151,6 +151,7 @@ interface UserRepository : BaseRepository<User> {
         WHERE u.role = 'USER'
             AND ul.languages = :language
             AND u.deleted = false
+            AND u.user_ended = false
             AND NOT EXISTS (
                 SELECT 1 FROM operator_users ou
                 WHERE ou.user_chat_id = u.chat_id
@@ -165,8 +166,23 @@ interface UserRepository : BaseRepository<User> {
 
     @Modifying
     @Transactional
-    @Query(value = "update users set user_ended = false where chat_id = :userChatId and role = 'USER' ", nativeQuery = true)
+    @Query(value = "update users set user_ended = true where chat_id = :userChatId and role = 'USER' ", nativeQuery = true)
     fun updateUserEndedStatus(userChatId: String)
+
+    @Modifying
+    @Transactional
+    @Query(value = "update users set user_ended = false where chat_id = :userChatId and role = 'USER' ", nativeQuery = true)
+    fun updateUserEndedStatusToFalse(userChatId: String)
+
+    @Modifying
+    @Transactional
+    @Query(value = "update users set user_ended = true where chat_id = :userChatId and role = 'OPERATOR' ", nativeQuery = true)
+    fun updateOperatorEndedStatus(userChatId: String)
+
+    @Modifying
+    @Transactional
+    @Query(value = "update users set user_ended = false where chat_id = :userChatId and role = 'OPERATOR' ", nativeQuery = true)
+    fun updateOperatorEndedStatusToTrue(userChatId: String)
 
 }
 

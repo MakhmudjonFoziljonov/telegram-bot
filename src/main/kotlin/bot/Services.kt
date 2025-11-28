@@ -102,10 +102,13 @@ class TelegramBotImpl(
 
     private fun handleOperatorResponse(operator: User, text: String) {
         val operatorLanguage = operator.language.name
+        val operatorLanguageEnum = operator.language
+        val operatorDbId = operator.id
         val operatorId = userRepository.findExactOperatorByLanguage(operatorLanguage)
             ?: throw OperatorNotFoundException()
 
         if (text == "/end") {
+//            handleEndCommand(operatorId, operatorLanguage, operatorDbId!!)
             notifyAndUpdateSessions(operatorId)
             return
         }
@@ -120,36 +123,24 @@ class TelegramBotImpl(
             }
 
             "/begin" -> {
-                var foundAnyUser = false
+                userRepository.updateOperatorEndedStatusToTrue(operatorId)
+                val currentSessions = operatorUsersRepository.findActiveSessionsByOperator(operatorId)
+                if (currentSessions.isNotEmpty()) {
+                    sendLocalizedMessage(operatorId, BotMessage.OPERATOR_WARN_MESSAGE, operatorLanguageEnum)
+                    return
+                }
 
-                languages.forEach { language ->
-                    val users = userRepository.findUserByLanguage(language)
-                    if (users.isNotEmpty()) {
-                        foundAnyUser = true
+                var foundUser: String? = null
 
-                        userRepository.updateBusyByChatId(operatorId)
-                        notifyOperatorOnWorkStart(operatorId)
-
-                        users.forEach { userChatId ->
-                            notifyClientOnOperatorJoin(userChatId)
-                            saveOperatorUserRelationIfNotExists(operatorId, userChatId)
-                        }
+                for (language in languages) {
+                    val waitingUser = userRepository.findFirstWaitingUserByLanguage(language)
+                    if (waitingUser != null) {
+                        foundUser = waitingUser
+                        break
                     }
                 }
 
-                if (!foundAnyUser) {
-                    sendLocalizedMessage(
-                        operatorId,
-                        BotMessage.OPERATOR_ANSWER_USERS_NOT_ONLINE,
-                        Language.valueOf(operatorLanguage)
-                    )
-                }
-            }
-
-            else -> {
-                val activeUsers = userRepository.findActiveUsersByOperator(operatorId)
-
-                if (activeUsers.isEmpty()) {
+                if (foundUser == null) {
                     sendLocalizedMessage(
                         operatorId,
                         BotMessage.OPERATOR_ANSWER_USERS_NOT_ONLINE,
@@ -157,155 +148,99 @@ class TelegramBotImpl(
                     )
                     return
                 }
-                activeUsers.forEach { userChatId ->
-                    try {
-                        sendMessage(userChatId, text)
-                        log.info(" Message sent: operator=$operatorId → user=$userChatId")
-                    } catch (e: TelegramApiException) {
-                        log.error(" Failed to send message to user $userChatId", e)
-                    }
+
+                try {
+                    userRepository.updateBusyByChatId(operatorId)
+                    saveOperatorUserRelationIfNotExists(operatorId, foundUser)
+                    notifyOperatorOnWorkStart(operatorId)
+                    notifyClientOnOperatorJoin(foundUser)
+
+                    log.info(" Operator $operatorId connected with user $foundUser ")
+                } catch (ex: Exception) {
+                    log.error("Failed to start session for operator=$operatorId user=$foundUser", ex)
+                    userRepository.updateBusyByChatId(operatorId)
                 }
+            }
+
+            else -> {
+                userRepository.findByChatId(operatorId)?.let { operator ->
+                    if (operator.userEnded) {
+                        sendLocalizedMessage(
+                            operatorId,
+                            BotMessage.OPERATOR_TEXT_BEGIN_WORK,
+                            Language.valueOf(operatorLanguage)
+                        )
+                        return
+                    }
+                    val activeUsers = userRepository.findActiveUsersByOperator(operatorId)
+
+                    if (activeUsers.isEmpty()) {
+                        sendLocalizedMessage(
+                            operatorId,
+                            BotMessage.OPERATOR_ANSWER_USERS_NOT_ONLINE,
+                            Language.valueOf(operatorLanguage)
+                        )
+                        return
+                    }
+                    activeUsers.forEach { userChatId ->
+                        try {
+                            sendMessage(userChatId, text)
+                            log.info(" Message sent: operator=$operatorId → user=$userChatId")
+                        } catch (e: TelegramApiException) {
+                            log.error(" Failed to send message to user $userChatId", e)
+                        }
+                    }
+                } ?: throw OperatorNotFoundException()
             }
         }
     }
-//        when (text) {
-//            "/end" -> handleEndCommand(operatorId, operatorLanguage)
-//
-//            "/start" -> {
-//                userRepository.updateBusyByChatId(operatorId)
-//                notifyOperatorSelectLanguage(operatorId)
-//            }
-//
-//            "/begin" -> handleBeginCommand(operatorId, operator.id!!, operatorLanguage)
-//
-//            else -> handleOperatorMessage(operatorId, text, operatorLanguage)
-//        }
-//
-//    }
 
-//    private fun handleEndCommand(operatorId: String, operatorLanguage: String) {
-//        val currentUser = operatorUsersRepository.findCurrentUserByOperator(operatorId)
-//
-//        if (currentUser != null) {
-//            operatorUsersRepository.updateSession(operatorId, currentUser)
-//
-//            userRepository.findLanguageByChatId(currentUser)?.let { userLang ->
-//                sendLocalizedMessage(
-//                    currentUser,
-//                    BotMessage.END_SESSION,
-//                    Language.valueOf(userLang)
-//                )
-//            }
-//
-//            sendLocalizedMessage(
-//                operatorId,
-//                BotMessage.THANK_YOU,
-//                Language.valueOf(operatorLanguage)
-//            )
-//
-//            log.info("✅ Operator $operatorId ended session with user $currentUser")
-//        } else {
-//            sendMessage(operatorId, "❌ Hozir hech qanday aktiv suhbat yo'q")
-//        }
-//    }
-//        userRepository.updateBusyEndByChatId(operatorId)
-//
-//    private fun handleBeginCommand(
-//        operatorId: String,
-//        operatorDbId: Long,
-//        operatorLanguage: String
-//    ) {
-//        // 1. Avval joriy sessiya borligini tekshirish
-//        val currentUser = operatorUsersRepository.findCurrentUserByOperator(operatorId)
-//
-//        if (currentUser != null) {
-//            sendMessage(
-//                operatorId,
-//                "⚠️ Avval joriy suhbatni /end bilan tugating!\n" +
-//                        "Joriy user: $currentUser"
-//            )
-//            return
-//        }
-//
-//        // 2. Operator tillarini olish
-//        val languages = operatorUsersRepository.findLanguagesOperator(operatorDbId)
-//
-//        // 3. Har bir tildan kutayotgan userni topish
-//        var foundUser: String? = null
-//        var foundLanguage: String? = null
-//
-//        for (language in languages) {
-//            val waitingUser = userRepository.findFirstWaitingUserByLanguage(language)
-//            if (waitingUser != null) {
-//                foundUser = waitingUser
-//                foundLanguage = language
-//                break // Birinchi topilgan userni ol
-//            }
-//        }
-//
-//        // 4. Agar user topilsa - bog'lanish
-//        if (foundUser != null) {
-//            // Operator busy = true
-//            userRepository.updateBusyByChatId(operatorId)
-//
-//            // Session yaratish
-//            saveOperatorUserRelationIfNotExists(operatorId, foundUser)
-//
-//            // Xabarlar yuborish
-//            notifyOperatorOnWorkStart(operatorId)
-//            notifyClientOnOperatorJoin(foundUser)
-//
-//            // Operatorga userning ma'lumotlarini ko'rsatish
-//            val userPhone = userRepository.findPhoneByChatId(foundUser)
-//            sendMessage(
-//                operatorId,
-//                "✅ Yangi mijoz:\n" +
-//                        "📱 Tel: $userPhone\n" +
-//                        "🌍 Til: $foundLanguage\n" +
-//                        "💬 User ID: $foundUser"
-//            )
-//
-//            log.info("✅ Operator $operatorId connected with user $foundUser ($foundLanguage)")
-//        } else {
-//            // Hech qanday kutayotgan user yo'q
-//            sendLocalizedMessage(
-//                operatorId,
-//                BotMessage.OPERATOR_ANSWER_USERS_NOT_ONLINE,
-//                Language.valueOf(operatorLanguage)
-//            )
-//        }
-//    }
-//
-//    private fun handleOperatorMessage(
-//        operatorId: String,
-//        text: String,
-//        operatorLanguage: String
-//    ) {
-//        // Faqat joriy aktiv user bilan gaplashish
-//        val currentUser = operatorUsersRepository.findCurrentUserByOperator(operatorId)
-//
-//        if (currentUser == null) {
-//            sendMessage(
-//                operatorId,
-//                "❌ Hozir aktiv suhbat yo'q!\n" +
-//                        "Yangi mijoz bilan gaplashish uchun /begin bosing"
-//            )
-//            return
-//        }
-//
-//        // Faqat 1 ta userga xabar yuborish
-//        try {
-//            sendMessage(currentUser, text)
-//            log.info("✅ Message sent: operator=$operatorId → user=$currentUser")
-//        } catch (e: TelegramApiException) {
-//            log.error("❌ Failed to send message to user $currentUser", e)
-//            sendMessage(operatorId, "❌ Xabar yuborishda xatolik!")
-//        }
-//    }
+    private fun handleEndCommand(operatorId: String, operatorLanguage: String, operatorDbId: Long) {
+        val currentUser = operatorUsersRepository.findCurrentUserByOperator(operatorId)
+
+        if (currentUser != null) {
+            operatorUsersRepository.updateSession(operatorId, currentUser)
+
+            userRepository.findLanguageByChatId(currentUser)?.let { userLang ->
+                sendLocalizedMessage(currentUser, BotMessage.END_SESSION, Language.valueOf(userLang))
+            }
+            sendLocalizedMessage(operatorId, BotMessage.THANK_YOU, Language.valueOf(operatorLanguage))
+            log.info("Operator $operatorId ended session with user $currentUser")
+
+            val languages = operatorUsersRepository.findLanguagesOperator(operatorDbId)
+
+            var nextUser: String? = null
+
+            for (lang in languages) {
+                val waiting = userRepository.findFirstWaitingUserByLanguage(lang)
+                if (waiting != null) {
+                    nextUser = waiting
+                    break
+                }
+            }
+
+            if (nextUser != null) {
+                saveOperatorUserRelationIfNotExists(operatorId, nextUser)
+                notifyClientOnOperatorJoin(nextUser)
+                notifyOperatorOnWorkStart(operatorId)
+
+            } else {
+                userRepository.updateBusyByChatId(operatorId)
+                sendLocalizedMessage(
+                    operatorId,
+                    BotMessage.OPERATOR_ANSWER_USERS_NOT_ONLINE,
+                    Language.valueOf(operatorLanguage)
+                )
+            }
+        } else {
+            sendLocalizedMessage(operatorId, BotMessage.OPERATOR_ANSWER_USERS_NOT_ONLINE, Language.valueOf(operatorLanguage))
+        }
+    }
 
     private fun notifyAndUpdateSessions(operatorId: String) {
         notifyOperatorOnWorkEnd(operatorId)
         userRepository.updateBusyEndByChatId(operatorId)
+        userRepository.updateOperatorEndedStatus(operatorId)
         operatorUsersRepository.updateSession(operatorId, null)
         log.info("Operator with $operatorId ended work")
     }
@@ -320,7 +255,7 @@ class TelegramBotImpl(
 
         when (text) {
             "/start" -> {
-                userRepository.updateUserEndedStatus(userChatId)
+                userRepository.updateUserEndedStatusToFalse(userChatId)
                 return
             }
 

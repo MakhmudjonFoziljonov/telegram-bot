@@ -84,7 +84,7 @@ enum class BotMessage(
     ),
     OPERATOR_OFFLINE(
         uzb = " Operator hozirda offline. Iltimos, keyinroq urinib ko'ring.\n" +
-                " /start tugmasini bosing va operator siz bilan bog'lanishini kuting!",
+                "/start tugmasini bosing va operator siz bilan bog'lanishini kuting!",
         rus = " Оператор сейчас не в сети. Пожалуйста, попробуйте позже. Нажмите кнопку /start\n" +
                 " и ждите, когда оператор свяжется с вами!",
         eng = " Operator is currently offline. Please try again later. Press the /start\n" +
@@ -124,6 +124,21 @@ enum class BotMessage(
         uzb = "❌ Siz {total} ta til tanlashingiz kerak! (Hozir: {count})",
         rus = "❌ Вы должны выбрать {total} языков! (Сейчас: {count})",
         eng = "❌ You must select {total} languages! (Current: {count})"
+    ),
+    OPERATOR_WARN_MESSAGE(
+        uzb = "⚠ Avval joriy suhbatni /end bilan tugating",
+        rus = "⚠ Сначала завершите текущий диалог с помощью команды /end",
+        eng = "⚠ First, finish the current conversation using the /end command"
+    ),
+    OPERATOR_NEW_CLIENT(
+        uzb = "",
+        rus = "",
+        eng = ""
+    ),
+    OPERATOR_TEXT_BEGIN_WORK(
+        uzb = "Ishni boshlash uchun /begin tugmasini bosing",
+        rus = "Чтобы начать работу, нажмите кнопку /begin",
+        eng = "To start work, press the /begin button",
     ),
     END_SESSION(
         uzb = "Botdan foydalanganiz uchun ming rahmat!",
