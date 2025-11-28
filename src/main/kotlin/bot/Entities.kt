@@ -40,6 +40,8 @@ class User(
     @Enumerated(EnumType.STRING)
     var languages: MutableSet<Language> = mutableSetOf(language),
 
+    val userEnded: Boolean = false,
+
     ) : BaseEntity()
 
 @Entity

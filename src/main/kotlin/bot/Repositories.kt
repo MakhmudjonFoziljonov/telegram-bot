@@ -77,12 +77,13 @@ interface UserRepository : BaseRepository<User> {
         SELECT u.chat_id
         FROM users u
         JOIN user_languages ul ON u.id = ul.user_chat_id
-        WHERE u.role = 'USER'
-        AND ul.languages = :language
+        WHERE  u.role = 'USER'
+        AND ul.languages = :language 
+        AND COALESCE(u.user_ended, false) = false
     """,
         nativeQuery = true
     )
-    fun findUserByLanguage(language: String): String?
+    fun findUserByLanguage(language: String): List<String>
 
 
     @Modifying
@@ -94,12 +95,6 @@ interface UserRepository : BaseRepository<User> {
     @Transactional
     @Query(value = "update users set busy = false where chat_id = :chatId ", nativeQuery = true)
     fun updateBusyEndByChatId(chatId: String)
-
-    @Query(
-        value = "select phone_number from users where chat_id = :chatIdStr and role = 'USER' and deleted = false",
-        nativeQuery = true
-    )
-    fun findPhoneByChatId(chatIdStr: String): String?
 
     @Modifying
     @Transactional
@@ -149,12 +144,29 @@ interface UserRepository : BaseRepository<User> {
     fun findActiveUsersByOperator(operatorChatId: String): List<String>
 
     @Query(
-        value = "SELECT session FROM operator_users " +
-                "WHERE operator_chat_id = :operatorChatId AND user_chat_id = :userChatId ",
+        value = """
+        SELECT u.chat_id
+        FROM users u
+        JOIN user_languages ul ON u.id = ul.user_chat_id
+        WHERE u.role = 'USER'
+            AND ul.languages = :language
+            AND u.deleted = false
+            AND NOT EXISTS (
+                SELECT 1 FROM operator_users ou
+                WHERE ou.user_chat_id = u.chat_id
+                AND ou.session = true
+            )
+        ORDER BY u.created_date ASC
+        LIMIT 1
+        """,
         nativeQuery = true
     )
-    fun findSession(operatorChatId: String, userChatId: String): Boolean?
+    fun findFirstWaitingUserByLanguage(language: String): String?
 
+    @Modifying
+    @Transactional
+    @Query(value = "update users set user_ended = false where chat_id = :userChatId and role = 'USER' ", nativeQuery = true)
+    fun updateUserEndedStatus(userChatId: String)
 
 }
 
@@ -173,7 +185,7 @@ interface OperatorUsersRepository : JpaRepository<OperatorUsers, Long> {
     @Modifying
     @Transactional
     @Query("UPDATE operator_users SET session = false WHERE id = :id", nativeQuery = true)
-    fun deactivateById(@Param("id") id: Long): Int
+    fun deactivateById(@Param("id") id: Long)
 
 
     @Query(
@@ -220,5 +232,17 @@ interface OperatorUsersRepository : JpaRepository<OperatorUsers, Long> {
 
     @Query(value = "select languages from user_languages where user_chat_id= :id", nativeQuery = true)
     fun findLanguagesOperator(id: Long): List<String>
+
+    @Query(
+        value = """
+            SELECT user_chat_id 
+            FROM operator_users
+            WHERE operator_chat_id = :operatorChatId
+            AND session = true
+            LIMIT 1
+        """,
+        nativeQuery = true
+    )
+    fun findCurrentUserByOperator(operatorChatId: String): String?
 
 }

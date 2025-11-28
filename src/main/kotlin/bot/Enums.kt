@@ -83,9 +83,12 @@ enum class BotMessage(
         eng = " No operator is available at the moment. The operator's average response time is 5 min."
     ),
     OPERATOR_OFFLINE(
-        uzb = " Operator hozirda offline. Iltimos, keyinroq urinib ko'ring.",
-        rus = " Оператор сейчас не в сети. Пожалуйста, попробуйте позже.",
-        eng = " Operator is currently offline. Please try again later."
+        uzb = " Operator hozirda offline. Iltimos, keyinroq urinib ko'ring.\n" +
+                " /start tugmasini bosing va operator siz bilan bog'lanishini kuting!",
+        rus = " Оператор сейчас не в сети. Пожалуйста, попробуйте позже. Нажмите кнопку /start\n" +
+                " и ждите, когда оператор свяжется с вами!",
+        eng = " Operator is currently offline. Please try again later. Press the /start\n" +
+                "button and wait for the operator to contact you.\n"
     ),
     MESSAGE_SENT_TO_OPERATOR(
         uzb = "✅ Xabaringiz operatorga yuborildi. Iltimos, javobni kuting...",
