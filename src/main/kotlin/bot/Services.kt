@@ -7,6 +7,7 @@ import org.springframework.stereotype.Component
 import org.telegram.telegrambots.bots.TelegramLongPollingBot
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage
 import org.telegram.telegrambots.meta.api.methods.send.SendPhoto
+import org.telegram.telegrambots.meta.api.methods.send.SendVideo
 import org.telegram.telegrambots.meta.api.methods.updatingmessages.EditMessageReplyMarkup
 import org.telegram.telegrambots.meta.api.objects.CallbackQuery
 import org.telegram.telegrambots.meta.api.objects.InputFile
@@ -35,6 +36,12 @@ interface TelegramBot {
     fun handleNewUser(chatId: String, text: String, message: Message)
     fun handleRegularUserMessage(user: User, text: String, chatId: String, messageId: String)
     fun handleCallbackQuery(callbackQuery: CallbackQuery, mainLanguage: Language)
+
+    fun handleUserPhoto(user: User, message: Message, messageId: String)
+    fun handleOperatorPhoto(operator: User, message: Message, replyToMessageId: String?)
+
+    fun handleUserVideo(user: User, message: Message, messageId: String)
+    fun handleOperatorVideo(operator: User, message: Message, replyToMessageId: String?)
 
     fun saveUser(chatId: String)
     fun saveLanguageUser(message: SendMessage, language: String)
@@ -155,12 +162,35 @@ class TelegramBotImpl(
             } else {
                 handleOperatorPhoto(user, message, replyToMessageId)
             }
+
         } else if (update.hasMessage() && update.message.hasVideo()) {
-            TODO()
+            val message = update.message
+            val messageId = message.messageId
+            val chatIdStr = message.chatId.toString()
+            val replyToMessageId = message.replyToMessage?.messageId.toString()
+
+            val user = userRepository.findByChatId(chatIdStr)
+            if (user == null) {
+                return
+            }
+
+            if (user.phoneNumber.isEmpty() && user.role != Role.OPERATOR) {
+                sendMessageWithContactButton(
+                    chatIdStr,
+                    BotMessage.PHONE_ANSWER_TEXT.getText(user.language)
+                )
+                return
+            }
+
+            if (user.role != Role.OPERATOR) {
+                handleUserVideo(user, message, messageId.toString())
+            } else {
+                handleOperatorVideo(user, message, replyToMessageId)
+            }
         }
     }
 
-    private fun handleOperatorPhoto(
+    override fun handleOperatorPhoto(
         operator: User,
         message: Message,
         replyToMessageId: String?
@@ -218,14 +248,121 @@ class TelegramBotImpl(
                 }
 
                 execute(sendPhoto)
-                log.info(" Photo sent: operator=$operatorId → user=$userChatId")
+                log.info("Photo sent: operator=$operatorId → user=$userChatId")
             } catch (e: TelegramApiException) {
-                log.error(" Failed to send photo to user $userChatId", e)
+                log.error("Failed to send photo to user $userChatId", e)
             }
         }
     }
 
-    private fun handleUserPhoto(
+    override fun handleUserVideo(
+        user: User,
+        message: Message,
+        messageId: String
+    ) {
+        val userChatId = user.chatId
+        val language = user.language
+
+        val video = message.video ?: return
+        val fileId = video.fileId
+        val caption = message.caption ?: ""
+
+        val operatorChatId = userRepository.findAvailableOperatorByLanguage(user.language.name)
+
+        if (operatorChatId == null) {
+            sendLocalizedMessage(userChatId, BotMessage.NO_OPERATOR_AVAILABLE, language)
+            return
+        }
+
+        val hasActiveSession = operatorUsersRepository.hasActiveSession(operatorChatId, userChatId)
+
+        if (hasActiveSession) {
+            try {
+                val operatorCaption = """
+                👤 User: ${user.phoneNumber}
+                ${if (caption.isNotEmpty()) "Caption: $caption" else ""}
+            """.trimIndent()
+
+                val sendVideo = SendVideo()
+                sendVideo.chatId = operatorChatId
+                sendVideo.video = InputFile(fileId)
+                sendVideo.caption = operatorCaption
+
+                val sentMessage = execute(sendVideo)
+                val botMessageId = sentMessage.messageId.toString()
+
+                saveMessageMapping(operatorChatId, userChatId, botMessageId, messageId)
+
+                sendLocalizedMessage(userChatId, BotMessage.MESSAGE_SENT_TO_OPERATOR, language)
+            } catch (e: TelegramApiException) {
+                log.error("Failed to send video to operator", e)
+            }
+        } else {
+            sendLocalizedMessage(userChatId, BotMessage.OPERATOR_OFFLINE, language)
+        }
+    }
+
+    override fun handleOperatorVideo(
+        operator: User,
+        message: Message,
+        replyToMessageId: String?
+    ) {
+        val operatorId = userRepository.findExactOperatorByLanguage(operator.language.name)
+            ?: throw OperatorNotFoundException()
+
+        userRepository.findByChatId(operatorId)?.let { op ->
+            if (op.userEnded) {
+                sendLocalizedMessage(
+                    operatorId,
+                    BotMessage.OPERATOR_TEXT_BEGIN_WORK,
+                    operator.language
+                )
+                return
+            }
+        }
+
+        val video = message.video ?: return
+        val fileId = video.fileId
+        val caption = message.caption ?: ""
+
+        val activeUsers = userRepository.findActiveUsersByOperator(operatorId)
+
+        if (activeUsers.isEmpty()) {
+            sendLocalizedMessage(
+                operatorId,
+                BotMessage.OPERATOR_ANSWER_USERS_NOT_ONLINE,
+                operator.language
+            )
+            return
+        }
+
+        activeUsers.forEach { userChatId ->
+            try {
+                val sendVideo = SendVideo()
+                sendVideo.chatId = userChatId
+                sendVideo.video = InputFile(fileId)
+                sendVideo.caption = caption
+
+                if (replyToMessageId != null) {
+                    val userMessageId = messageMappingRepository.findUserMessageId(
+                        operatorId,
+                        replyToMessageId
+                    )
+
+                    if (userMessageId != null) {
+                        sendVideo.replyToMessageId = userMessageId
+                    }
+                }
+
+                execute(sendVideo)
+                log.info("Video sent: operator=$operatorId → user=$userChatId")
+            } catch (e: TelegramApiException) {
+                log.error("Failed to send video to user $userChatId", e)
+            }
+        }
+    }
+
+    override fun handleUserPhoto(
         user: User,
         message: Message,
         messageId: String
