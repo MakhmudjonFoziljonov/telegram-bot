@@ -124,8 +124,7 @@ interface UserRepository : BaseRepository<User> {
         FROM users u
         JOIN user_languages ul ON u.id = ul.user_chat_id
         WHERE u.role = 'OPERATOR'
-            AND u.deleted = false
-            AND u.busy = true
+            AND u.deleted = false      
             AND ul.languages = :language
         ORDER BY u.created_date ASC
         LIMIT 1

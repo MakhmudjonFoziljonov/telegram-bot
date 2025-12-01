@@ -19,7 +19,51 @@ import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.Keyboard
 import org.telegram.telegrambots.meta.exceptions.TelegramApiException
 
 interface TelegramBot {
+    fun startMessage(chatId: String, text: String)
 
+    fun sendMessage(text: SendMessage)
+    fun sendContact(chatId: Long, lang: String)
+    fun sendMessage(chatId: String, text: String)
+    fun sendContactToRegularUser(chatId: Long, lang: String)
+    fun sendMessageToOperator(operatorChatId: String, text: String)
+    fun sendMessageWithContactButton(chatId: String, text: String)
+    fun sendContactAnswerTextToUser(lang: String): String
+
+    fun handleContact(message: Message)
+    fun handleOperatorResponse(operator: User, text: String)
+    fun handleCallbackQueryUser(callbackQuery: CallbackQuery)
+    fun handleNewUser(chatId: String, text: String, message: Message)
+    fun handleRegularUserMessage(user: User, text: String, chatId: String)
+    fun handleCallbackQuery(callbackQuery: CallbackQuery, mainLanguage: Language)
+
+    fun saveUser(chatId: String)
+    fun saveLanguageUser(message: SendMessage, language: String)
+    fun saveOperatorLanguages(chatId: String, languages: Set<Language>)
+    fun saveOperatorUserRelationIfNotExists(operatorChatId: String, userChatId: String)
+
+    fun adminProcessLanguageSelection(callbackQuery: CallbackQuery, user: User, language: String)
+
+    fun notifyOperatorOnWorkEnd(operatorChatId: String)
+    fun notifyAndUpdateSessions(operatorId: String)
+    fun notifyClientOnOperatorJoin(userChatId: String)
+    fun notifyOperatorOnWorkStart(chatId: String)
+    fun notifyOperatorSelectLanguage(chatId: String)
+
+    fun showLanguageCountSelection(chatId: String, language: Language)
+    fun showLanguageSelection(chatId: String, requiredCount: Int, language: Language)
+
+    fun shareContactBtn(): ReplyKeyboardMarkup
+
+    fun updateOperatorLanguage(user: User, lang: String)
+    fun updateUserPhoneNumber(chatId: String, phoneNumber: String)
+    fun updateLanguageSelection(chatId: Long, messageId: Int, requiredCount: Int, language: Language)
+
+    fun toLanguage(code: String): Language
+
+    fun languageInlineKeyboard(): InlineKeyboardMarkup
+    fun removeInlineKeyboard(chatId: Long, messageId: Int)
+    fun processLanguageSelection(chatId: Long, callBackData: String)
+    fun normalizePhoneNumber(phoneNumber: String): String
 }
 
 private const val CALLBACK_LANGUAGE_COUNT_PREFIX = "LANG_COUNT_"
@@ -89,7 +133,7 @@ class TelegramBotImpl(
         }
     }
 
-    private fun sendMessageWithContactButton(chatId: String, text: String) {
+    override fun sendMessageWithContactButton(chatId: String, text: String) {
         val message = SendMessage(chatId, text)
         message.replyMarkup = shareContactBtn()
 
@@ -100,7 +144,7 @@ class TelegramBotImpl(
         }
     }
 
-    private fun handleOperatorResponse(operator: User, text: String) {
+    override fun handleOperatorResponse(operator: User, text: String) {
         val operatorLanguage = operator.language.name
         val operatorLanguageEnum = operator.language
         val operatorDbId = operator.id
@@ -233,11 +277,15 @@ class TelegramBotImpl(
                 )
             }
         } else {
-            sendLocalizedMessage(operatorId, BotMessage.OPERATOR_ANSWER_USERS_NOT_ONLINE, Language.valueOf(operatorLanguage))
+            sendLocalizedMessage(
+                operatorId,
+                BotMessage.OPERATOR_ANSWER_USERS_NOT_ONLINE,
+                Language.valueOf(operatorLanguage)
+            )
         }
     }
 
-    private fun notifyAndUpdateSessions(operatorId: String) {
+    override fun notifyAndUpdateSessions(operatorId: String) {
         notifyOperatorOnWorkEnd(operatorId)
         userRepository.updateBusyEndByChatId(operatorId)
         userRepository.updateOperatorEndedStatus(operatorId)
@@ -245,7 +293,7 @@ class TelegramBotImpl(
         log.info("Operator with $operatorId ended work")
     }
 
-    private fun handleRegularUserMessage(
+    override fun handleRegularUserMessage(
         user: User,
         text: String,
         chatId: String,
@@ -293,7 +341,7 @@ class TelegramBotImpl(
         }
     }
 
-    private fun saveOperatorUserRelationIfNotExists(
+    override fun saveOperatorUserRelationIfNotExists(
         operatorChatId: String,
         userChatId: String
     ) {
@@ -315,7 +363,7 @@ class TelegramBotImpl(
         }
     }
 
-    private fun sendMessageToOperator(operatorChatId: String, text: String) {
+    override fun sendMessageToOperator(operatorChatId: String, text: String) {
         try {
             execute(SendMessage(operatorChatId, text))
         } catch (e: TelegramApiException) {
@@ -323,7 +371,7 @@ class TelegramBotImpl(
         }
     }
 
-    private fun adminProcessLanguageSelection(callbackQuery: CallbackQuery, user: User, language: String) {
+    override fun adminProcessLanguageSelection(callbackQuery: CallbackQuery, user: User, language: String) {
         if (user.role == Role.OPERATOR) {
             handleCallbackQuery(callbackQuery, Language.valueOf(language))
         } else {
@@ -331,7 +379,7 @@ class TelegramBotImpl(
         }
     }
 
-    private fun notifyOperatorOnWorkEnd(operatorChatId: String) {
+    override fun notifyOperatorOnWorkEnd(operatorChatId: String) {
         userRepository.findLanguageByChatId(operatorChatId)?.let { lang ->
             val language = when (lang) {
                 "RUS" -> Language.RUS
@@ -351,7 +399,7 @@ class TelegramBotImpl(
         } ?: throw OperatorNotFoundException()
     }
 
-    private fun notifyClientOnOperatorJoin(userChatId: String) {
+    override fun notifyClientOnOperatorJoin(userChatId: String) {
         userRepository.findLanguageByChatId(userChatId)?.let { userLanguage ->
             val language = when (userLanguage) {
                 "RUS" -> Language.RUS
@@ -371,7 +419,7 @@ class TelegramBotImpl(
         } ?: throw UserNotFoundException()
     }
 
-    private fun notifyOperatorOnWorkStart(chatId: String) {
+    override fun notifyOperatorOnWorkStart(chatId: String) {
         userRepository.findLanguageByChatId(chatId)?.let { lang ->
             val language = when (lang) {
                 "RUS" -> Language.RUS
@@ -390,7 +438,7 @@ class TelegramBotImpl(
         } ?: throw OperatorNotFoundException()
     }
 
-    private fun notifyOperatorSelectLanguage(chatId: String) {
+    override fun notifyOperatorSelectLanguage(chatId: String) {
         userRepository.findLanguageByChatId(chatId)?.let { lang ->
             val language = when (lang) {
                 "RUS" -> Language.RUS
@@ -405,7 +453,7 @@ class TelegramBotImpl(
         }
     }
 
-    private fun showLanguageCountSelection(chatId: String, language: Language) {
+    override fun showLanguageCountSelection(chatId: String, language: Language) {
         val message = SendMessage(
             chatId,
             BotMessage.OPERATOR_SELECT_LANGUAGE_COUNT.getText(language)
@@ -431,7 +479,7 @@ class TelegramBotImpl(
         }
     }
 
-    private fun showLanguageSelection(chatId: String, requiredCount: Int, language: Language) {
+    override fun showLanguageSelection(chatId: String, requiredCount: Int, language: Language) {
         val state = operatorLanguageSelection[chatId] ?: OperatorLanguageState()
 
         val message = SendMessage(
@@ -480,7 +528,7 @@ class TelegramBotImpl(
         }
     }
 
-    private fun updateLanguageSelection(chatId: Long, messageId: Int, requiredCount: Int, language: Language) {
+    override fun updateLanguageSelection(chatId: Long, messageId: Int, requiredCount: Int, language: Language) {
         val state = operatorLanguageSelection[chatId.toString()]!!
 
         BotMessage.OPERATOR_SELECT_LANGUAGES.getText(
@@ -525,7 +573,7 @@ class TelegramBotImpl(
         }
     }
 
-    private fun handleCallbackQuery(callbackQuery: CallbackQuery, mainLanguage: Language) {
+    override fun handleCallbackQuery(callbackQuery: CallbackQuery, mainLanguage: Language) {
         val callBackData = callbackQuery.data
         val chatId = callbackQuery.from.id.toString()
         val messageId = callbackQuery.message?.messageId ?: return
@@ -587,7 +635,7 @@ class TelegramBotImpl(
     }
 
 
-    private fun saveOperatorLanguages(chatId: String, languages: Set<Language>) {
+    override fun saveOperatorLanguages(chatId: String, languages: Set<Language>) {
         userRepository.clearOperatorLanguages(chatId)
 
         languages.forEach { language ->
@@ -597,7 +645,7 @@ class TelegramBotImpl(
     }
 
 
-    private fun handleContact(message: Message) {
+    override fun handleContact(message: Message) {
         val chatId = message.chatId.toString()
 
         val lang = userRepository.findLangByChatId(chatId) ?: "UZB"
@@ -610,8 +658,8 @@ class TelegramBotImpl(
         sendLocalizedMessage(chatId, BotMessage.HANDLE_CONTACT, language)
     }
 
-    private fun sendContact(chatId: Long, lang: String) {
-        val user = userRepository.findByChatId(chatId.toString()) ?: run {
+    override fun sendContact(chatId: Long, lang: String) {
+         val user = userRepository.findByChatId(chatId.toString()) ?: run {
             log.error("User not found for chatId: $chatId")
             return
         }
@@ -631,12 +679,12 @@ class TelegramBotImpl(
         }
     }
 
-    private fun updateOperatorLanguage(user: User, lang: String) {
+    override fun updateOperatorLanguage(user: User, lang: String) {
         user.language = toLanguage(lang)
         userRepository.save(user)
     }
 
-    private fun sendContactToRegularUser(chatId: Long, lang: String) {
+    override fun sendContactToRegularUser(chatId: Long, lang: String) {
         val keyboardMarkup = shareContactBtn()
         val message = SendMessage(
             chatId.toString(),
@@ -649,11 +697,11 @@ class TelegramBotImpl(
     }
 
 
-    private fun sendContactAnswerTextToUser(lang: String): String =
+    override fun sendContactAnswerTextToUser(lang: String): String =
         BotMessage.SHARE_CONTACT.getText(lang)
 
 
-    private fun toLanguage(code: String): Language =
+    override fun toLanguage(code: String): Language =
         when (code) {
             "ENG" -> Language.ENG
             "RUS" -> Language.RUS
@@ -661,7 +709,7 @@ class TelegramBotImpl(
         }
 
 
-    private fun saveLanguageUser(message: SendMessage, language: String) {
+    override fun saveLanguageUser(message: SendMessage, language: String) {
         userRepository.findByChatId(message.chatId)?.let { user ->
             val lang = when (language) {
                 "ENG" -> Language.ENG
@@ -673,7 +721,7 @@ class TelegramBotImpl(
         }
     }
 
-    private fun saveUser(chatId: String) {
+    override fun saveUser(chatId: String) {
         userRepository.save(
             User(
                 chatId = chatId,
@@ -685,7 +733,7 @@ class TelegramBotImpl(
         )
     }
 
-    private fun shareContactBtn(): ReplyKeyboardMarkup {
+    override fun shareContactBtn(): ReplyKeyboardMarkup {
         val keyboardMarkup = ReplyKeyboardMarkup()
         keyboardMarkup.resizeKeyboard = true
         keyboardMarkup.oneTimeKeyboard = true
@@ -701,7 +749,7 @@ class TelegramBotImpl(
         return keyboardMarkup
     }
 
-    private fun sendMessage(text: SendMessage) {
+    override fun sendMessage(text: SendMessage) {
         try {
             execute(text)
         } catch (e: TelegramApiException) {
@@ -709,7 +757,7 @@ class TelegramBotImpl(
         }
     }
 
-    private fun sendMessage(chatId: String, text: String) {
+    override fun sendMessage(chatId: String, text: String) {
         val removeKeyboard = ReplyKeyboardRemove(true)
         val message = SendMessage(chatId, text)
         message.replyMarkup = removeKeyboard
@@ -721,7 +769,7 @@ class TelegramBotImpl(
         }
     }
 
-    private fun startMessage(chatId: String, text: String) {
+    override fun startMessage(chatId: String, text: String) {
         val message = SendMessage(chatId, text)
         message.replyMarkup = languageInlineKeyboard()
         try {
@@ -731,7 +779,7 @@ class TelegramBotImpl(
         }
     }
 
-    private fun languageInlineKeyboard(): InlineKeyboardMarkup {
+    override fun languageInlineKeyboard(): InlineKeyboardMarkup {
         val uzBtn = InlineKeyboardButton().apply {
             text = "UZB 🇺🇿"
             callbackData = "UZB_BUTTON"
@@ -755,7 +803,7 @@ class TelegramBotImpl(
         return InlineKeyboardMarkup(keyboard)
     }
 
-    private fun handleCallbackQueryUser(callbackQuery: CallbackQuery) {
+    override fun handleCallbackQueryUser(callbackQuery: CallbackQuery) {
         val callBackData = callbackQuery.data
         val chatId = callbackQuery.from.id
         val messageId = callbackQuery.message?.messageId ?: return
@@ -764,7 +812,7 @@ class TelegramBotImpl(
         processLanguageSelection(chatId, callBackData)
     }
 
-    private fun removeInlineKeyboard(chatId: Long, messageId: Int) {
+    override fun removeInlineKeyboard(chatId: Long, messageId: Int) {
         try {
             execute(EditMessageReplyMarkup().apply {
                 this.chatId = chatId.toString()
@@ -776,7 +824,7 @@ class TelegramBotImpl(
         }
     }
 
-    private fun processLanguageSelection(chatId: Long, callBackData: String) {
+    override fun processLanguageSelection(chatId: Long, callBackData: String) {
         val language = when (callBackData) {
             "UZB_BUTTON" -> "UZB"
             "RUS_BUTTON" -> "RUS"
@@ -786,14 +834,14 @@ class TelegramBotImpl(
         sendContact(chatId, language)
     }
 
-    private fun updateUserPhoneNumber(chatId: String, phoneNumber: String) {
+    override fun updateUserPhoneNumber(chatId: String, phoneNumber: String) {
         userRepository.findByChatId(chatId)?.let { user ->
             user.phoneNumber = normalizePhoneNumber(phoneNumber)
             userRepository.save(user)
         }
     }
 
-    private fun normalizePhoneNumber(phoneNumber: String): String {
+    override fun normalizePhoneNumber(phoneNumber: String): String {
         return if (phoneNumber.startsWith("+")) {
             phoneNumber
         } else {
@@ -801,7 +849,7 @@ class TelegramBotImpl(
         }
     }
 
-    private fun handleNewUser(chatId: String, text: String, message: Message) {
+    override fun handleNewUser(chatId: String, text: String, message: Message) {
         saveUser(chatId)
 
         when (text) {
