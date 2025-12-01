@@ -6,8 +6,10 @@ import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.stereotype.Component
 import org.telegram.telegrambots.bots.TelegramLongPollingBot
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage
+import org.telegram.telegrambots.meta.api.methods.send.SendPhoto
 import org.telegram.telegrambots.meta.api.methods.updatingmessages.EditMessageReplyMarkup
 import org.telegram.telegrambots.meta.api.objects.CallbackQuery
+import org.telegram.telegrambots.meta.api.objects.InputFile
 import org.telegram.telegrambots.meta.api.objects.Message
 import org.telegram.telegrambots.meta.api.objects.Update
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup
@@ -128,6 +130,151 @@ class TelegramBotImpl(
 
             updateUserPhoneNumber(chatId, phoneNumber)
             handleContact(message)
+
+        } else if (update.hasMessage() && update.message.hasPhoto()) {
+            val message = update.message
+            val messageId = message.messageId
+            val chatIdStr = message.chatId.toString()
+            val replyToMessageId = message.replyToMessage?.messageId.toString()
+
+            val user = userRepository.findByChatId(chatIdStr)
+            if (user == null) {
+                return
+            }
+
+            if (user.phoneNumber.isEmpty() && user.role != Role.OPERATOR) {
+                sendMessageWithContactButton(
+                    chatIdStr,
+                    BotMessage.PHONE_ANSWER_TEXT.getText(user.language)
+                )
+                return
+            }
+
+            if (user.role != Role.OPERATOR) {
+                handleUserPhoto(user, message, messageId.toString())
+            } else {
+                handleOperatorPhoto(user, message, replyToMessageId)
+            }
+        } else if (update.hasMessage() && update.message.hasVideo()) {
+            TODO()
+        }
+    }
+
+    private fun handleOperatorPhoto(
+        operator: User,
+        message: Message,
+        replyToMessageId: String?
+    ) {
+        val operatorId = userRepository.findExactOperatorByLanguage(operator.language.name)
+            ?: throw OperatorNotFoundException()
+
+        userRepository.findByChatId(operatorId)?.let { op ->
+            if (op.userEnded) {
+                sendLocalizedMessage(
+                    operatorId,
+                    BotMessage.OPERATOR_TEXT_BEGIN_WORK,
+                    operator.language
+                )
+                return
+            }
+        }
+
+        val photos = message.photo
+        if (photos.isEmpty()) {
+            return
+        }
+
+        val photo = photos.maxByOrNull { it.fileSize ?: 0 } ?: photos.last()
+        val fileId = photo.fileId
+        val caption = message.caption ?: ""
+
+        val activeUsers = userRepository.findActiveUsersByOperator(operatorId)
+
+        if (activeUsers.isEmpty()) {
+            sendLocalizedMessage(
+                operatorId,
+                BotMessage.OPERATOR_ANSWER_USERS_NOT_ONLINE,
+                operator.language
+            )
+            return
+        }
+
+        activeUsers.forEach { userChatId ->
+            try {
+                val sendPhoto = SendPhoto()
+                sendPhoto.chatId = userChatId
+                sendPhoto.photo = InputFile(fileId)
+                sendPhoto.caption = caption
+
+                if (replyToMessageId != null) {
+                    val userMessageId = messageMappingRepository.findUserMessageId(
+                        operatorId,
+                        replyToMessageId
+                    )
+
+                    if (userMessageId != null) {
+                        sendPhoto.replyToMessageId = userMessageId
+                    }
+                }
+
+                execute(sendPhoto)
+                log.info(" Photo sent: operator=$operatorId → user=$userChatId")
+            } catch (e: TelegramApiException) {
+                log.error(" Failed to send photo to user $userChatId", e)
+            }
+        }
+    }
+
+    private fun handleUserPhoto(
+        user: User,
+        message: Message,
+        messageId: String
+    ) {
+        val userChatId = user.chatId
+        val language = user.language
+
+        val photos = message.photo
+
+        if (photos.isEmpty()) {
+            return
+        }
+
+        val photo = photos.maxByOrNull { it.fileSize ?: 0 } ?: photos.last()
+        val fileId = photo.fileId
+        val caption = message.caption ?: ""
+
+        val operatorChatId = userRepository.findAvailableOperatorByLanguage(user.language.name)
+
+        if (operatorChatId == null) {
+            sendLocalizedMessage(userChatId, BotMessage.NO_OPERATOR_AVAILABLE, language)
+            return
+        }
+
+        val hasActiveSession = operatorUsersRepository.hasActiveSession(operatorChatId, userChatId)
+
+        if (hasActiveSession) {
+            try {
+                val operatorCaption = """
+                👤 User: ${user.phoneNumber}
+                ${if (caption.isNotEmpty()) " Caption: $caption" else ""}
+            """.trimIndent()
+
+                val sendPhoto = SendPhoto()
+                sendPhoto.chatId = operatorChatId
+                sendPhoto.photo = InputFile(fileId)
+                sendPhoto.caption = operatorCaption
+
+                val sentMessage = execute(sendPhoto)
+                val botMessageId = sentMessage.messageId.toString()
+
+                saveMessageMapping(operatorChatId, userChatId, botMessageId, messageId)
+
+                sendLocalizedMessage(userChatId, BotMessage.MESSAGE_SENT_TO_OPERATOR, language)
+            } catch (e: TelegramApiException) {
+                log.error("Failed to send photo to operator", e)
+            }
+        } else {
+            sendLocalizedMessage(userChatId, BotMessage.OPERATOR_OFFLINE, language)
         }
     }
 
