@@ -259,5 +259,35 @@ interface OperatorUsersRepository : JpaRepository<OperatorUsers, Long> {
         nativeQuery = true
     )
     fun findCurrentUserByOperator(operatorChatId: String): String?
+}
 
+interface MessageMappingRepository : BaseRepository<MessageMapping> {
+
+    @Query(
+        value = """
+            SELECT user_message_id 
+            FROM message_mapping 
+            WHERE operator_chat_id = :operatorChatId 
+            AND bot_message_id = :botMessageId
+            ORDER BY created_date DESC
+            LIMIT 1
+        """,
+        nativeQuery = true
+    )
+    fun findUserMessageId(
+        operatorChatId: String,
+        botMessageId: String?
+    ): Int?
+
+    @Modifying
+    @Transactional
+    @Query(
+        value = """
+            DELETE FROM message_mapping 
+            WHERE operator_chat_id = :operatorChatId 
+            AND user_chat_id = :userChatId
+        """,
+        nativeQuery = true
+    )
+    fun deleteBySession(operatorChatId: String, userChatId: String)
 }

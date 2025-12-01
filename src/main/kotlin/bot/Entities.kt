@@ -55,3 +55,14 @@ class OperatorUsers(
     var userChatId: String,
     var session: Boolean = true
 )
+
+@Entity
+@Table(name = "message_mapping")
+class MessageMapping(
+    var operatorChatId: String,
+    var userChatId: String,
+
+    var botMessageId: String,
+    var userMessageId: String,
+) : BaseEntity()
+
