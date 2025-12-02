@@ -5,6 +5,7 @@ import org.slf4j.LoggerFactory
 import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.stereotype.Component
 import org.telegram.telegrambots.bots.TelegramLongPollingBot
+import org.telegram.telegrambots.meta.api.methods.send.SendDocument
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage
 import org.telegram.telegrambots.meta.api.methods.send.SendPhoto
 import org.telegram.telegrambots.meta.api.methods.send.SendVideo
@@ -20,6 +21,14 @@ import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKe
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.KeyboardButton
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.KeyboardRow
 import org.telegram.telegrambots.meta.exceptions.TelegramApiException
+
+private const val CALLBACK_LANGUAGE_COUNT_PREFIX = "LANG_COUNT_"
+private const val CALLBACK_LANGUAGE_SELECT_PREFIX = "LANG_SELECT_"
+private const val CALLBACK_LANGUAGE_CONFIRM = "LANG_CONFIRM"
+private const val START = "/start"
+private const val BEGIN = "/begin"
+private const val END = "/end"
+private const val HELP = "/help"
 
 interface TelegramBot {
     fun sendMessage(text: SendMessage)
@@ -42,6 +51,9 @@ interface TelegramBot {
 
     fun handleUserVideo(user: User, message: Message, messageId: String)
     fun handleOperatorVideo(operator: User, message: Message, replyToMessageId: String?)
+
+    fun handleUserDocument(user: User, message: Message, messageId: String)
+    fun handleOperatorDocument(operator: User, message: Message, replyToMessageId: String)
 
     fun saveUser(chatId: String)
     fun saveLanguageUser(message: SendMessage, language: String)
@@ -70,10 +82,6 @@ interface TelegramBot {
     fun processLanguageSelection(chatId: Long, callBackData: String)
     fun adminProcessLanguageSelection(callbackQuery: CallbackQuery, user: User, language: String)
 }
-
-private const val CALLBACK_LANGUAGE_COUNT_PREFIX = "LANG_COUNT_"
-private const val CALLBACK_LANGUAGE_SELECT_PREFIX = "LANG_SELECT_"
-private const val CALLBACK_LANGUAGE_CONFIRM = "LANG_CONFIRM"
 
 @Component
 class TelegramBotImpl(
@@ -144,10 +152,7 @@ class TelegramBotImpl(
             val chatIdStr = message.chatId.toString()
             val replyToMessageId = message.replyToMessage?.messageId.toString()
 
-            val user = userRepository.findByChatId(chatIdStr)
-            if (user == null) {
-                return
-            }
+            val user = userRepository.findByChatId(chatIdStr) ?: throw UserNotFoundException()
 
             if (user.phoneNumber.isEmpty() && user.role != Role.OPERATOR) {
                 sendMessageWithContactButton(
@@ -169,10 +174,7 @@ class TelegramBotImpl(
             val chatIdStr = message.chatId.toString()
             val replyToMessageId = message.replyToMessage?.messageId.toString()
 
-            val user = userRepository.findByChatId(chatIdStr)
-            if (user == null) {
-                return
-            }
+            val user = userRepository.findByChatId(chatIdStr) ?: throw UserNotFoundException()
 
             if (user.phoneNumber.isEmpty() && user.role != Role.OPERATOR) {
                 sendMessageWithContactButton(
@@ -186,6 +188,27 @@ class TelegramBotImpl(
                 handleUserVideo(user, message, messageId.toString())
             } else {
                 handleOperatorVideo(user, message, replyToMessageId)
+            }
+        } else if (update.hasMessage() && update.message.hasDocument()) {
+            val message = update.message
+            val messageId = message.messageId
+            val chatIdStr = message.chatId.toString()
+            val replyToMessageId = message.replyToMessage?.messageId.toString()
+
+            val user = userRepository.findByChatId(chatIdStr) ?: throw UserNotFoundException()
+
+            if (user.phoneNumber.isEmpty() && user.role != Role.OPERATOR) {
+                sendMessageWithContactButton(
+                    chatIdStr,
+                    BotMessage.PHONE_ANSWER_TEXT.getText(user.language)
+                )
+                return
+            }
+
+            if (user.role != Role.OPERATOR) {
+                handleUserDocument(user, message, messageId.toString())
+            } else {
+                handleOperatorDocument(user, message, replyToMessageId)
             }
         }
     }
@@ -433,7 +456,7 @@ class TelegramBotImpl(
         val operatorId = userRepository.findExactOperatorByLanguage(operatorLanguage)
             ?: throw OperatorNotFoundException()
 
-        if (text == "/end") {
+        if (text == END) {
 //            handleEndCommand(operatorId, operatorLanguage, operatorDbId!!)
             notifyAndUpdateSessions(operatorId)
             return
@@ -442,13 +465,13 @@ class TelegramBotImpl(
         val languages = operatorUsersRepository.findLanguagesOperator(operator.id!!)
 
         when (text) {
-            "/start" -> {
+            START -> {
                 userRepository.updateBusyByChatId(operatorId)
                 notifyOperatorSelectLanguage(operatorId)
                 return
             }
 
-            "/begin" -> {
+            BEGIN -> {
                 userRepository.updateOperatorEndedStatusToTrue(operatorId)
                 val currentSessions = operatorUsersRepository.findActiveSessionsByOperator(operatorId)
                 if (currentSessions.isNotEmpty()) {
@@ -490,35 +513,6 @@ class TelegramBotImpl(
 
             else -> {
                 handleOperatorMessage(operatorId, text, operatorLanguage, replyMessageId)
-//
-//                userRepository.findByChatId(operatorId)?.let { operator ->
-//                    if (operator.userEnded) {
-//                        sendLocalizedMessage(
-//                            operatorId,
-//                            BotMessage.OPERATOR_TEXT_BEGIN_WORK,
-//                            Language.valueOf(operatorLanguage)
-//                        )
-//                        return
-//                    }
-//                    val activeUsers = userRepository.findActiveUsersByOperator(operatorId)
-//
-//                    if (activeUsers.isEmpty()) {
-//                        sendLocalizedMessage(
-//                            operatorId,
-//                            BotMessage.OPERATOR_ANSWER_USERS_NOT_ONLINE,
-//                            Language.valueOf(operatorLanguage)
-//                        )
-//                        return
-//                    }
-//                    activeUsers.forEach { userChatId ->
-//                        try {
-//                            sendMessage(userChatId, text)
-//                            log.info(" Message sent: operator=$operatorId → user=$userChatId")
-//                        } catch (e: TelegramApiException) {
-//                            log.error(" Failed to send message to user $userChatId", e)
-//                        }
-//                    }
-//                } ?: throw OperatorNotFoundException()
             }
         }
     }
@@ -658,17 +652,17 @@ class TelegramBotImpl(
         val language = user.language
 
         when (text) {
-            "/start" -> {
+            START -> {
                 userRepository.updateUserEndedStatusToFalse(userChatId)
                 return
             }
 
-            "/help" -> {
+            HELP -> {
                 sendLocalizedMessage(userChatId, BotMessage.HELP_TEXT, language)
                 return
             }
 
-            "/end" -> {
+            END -> {
                 operatorUsersRepository.updateSession(null, userChatId)
                 userRepository.updateUserEndedStatus(userChatId)
                 sendLocalizedMessage(userChatId, BotMessage.END_SESSION, language)
@@ -759,6 +753,107 @@ class TelegramBotImpl(
             handleCallbackQuery(callbackQuery, Language.valueOf(language))
         } else {
             handleCallbackQueryUser(callbackQuery)
+        }
+    }
+
+    override fun handleUserDocument(user: User, message: Message, messageId: String) {
+
+        val userChatId = user.chatId
+        val language = user.language
+
+        val document = message.document
+        val fileId = document.fileId
+//        val fileName = document.fileName
+        val caption = message.caption ?: ""
+
+        val operatorChatId = userRepository.findAvailableOperatorByLanguage(user.language.name)
+
+        if (operatorChatId == null) {
+            sendLocalizedMessage(userChatId, BotMessage.NO_OPERATOR_AVAILABLE, language)
+            return
+        }
+
+        val hasActiveSession = operatorUsersRepository.hasActiveSession(operatorChatId, userChatId)
+
+        if (hasActiveSession) {
+            try {
+                val operatorCaption = """
+                👤 User: ${user.phoneNumber}
+                ${if (caption.isNotEmpty()) "Caption: $caption" else ""}
+            """.trimIndent()
+
+                val sendDocument = SendDocument()
+                sendDocument.chatId = operatorChatId
+                sendDocument.document = InputFile(fileId)
+                sendDocument.caption = operatorCaption
+
+                val sentMessage = execute(sendDocument)
+                val botMessageId = sentMessage.messageId.toString()
+
+                saveMessageMapping(operatorChatId, userChatId, botMessageId, messageId)
+
+                sendLocalizedMessage(userChatId, BotMessage.MESSAGE_SENT_TO_OPERATOR, language)
+            } catch (e: TelegramApiException) {
+                log.error("Failed to send video to operator", e)
+            }
+        } else {
+            sendLocalizedMessage(userChatId, BotMessage.OPERATOR_OFFLINE, language)
+        }
+    }
+
+    override fun handleOperatorDocument(operator: User, message: Message, replyToMessageId: String) {
+        val operatorId = userRepository.findExactOperatorByLanguage(operator.language.name)
+            ?: throw OperatorNotFoundException()
+
+        userRepository.findByChatId(operatorId)?.let { op ->
+            if (op.userEnded) {
+                sendLocalizedMessage(
+                    operatorId,
+                    BotMessage.OPERATOR_TEXT_BEGIN_WORK,
+                    operator.language
+                )
+                return
+            }
+        }
+
+        val document = message.document ?: return
+        val fileId = document.fileId
+        val caption = message.caption ?: ""
+
+        val activeUsers = userRepository.findActiveUsersByOperator(operatorId)
+
+        if (activeUsers.isEmpty()) {
+            sendLocalizedMessage(
+                operatorId,
+                BotMessage.OPERATOR_ANSWER_USERS_NOT_ONLINE,
+                operator.language
+            )
+            return
+        }
+
+        activeUsers.forEach { userChatId ->
+            try {
+                val sendDocument = SendDocument()
+                sendDocument.chatId = userChatId
+                sendDocument.document = InputFile(fileId)
+                sendDocument.caption = caption
+
+                if (replyToMessageId != null) {
+                    val userMessageId = messageMappingRepository.findUserMessageId(
+                        operatorId,
+                        replyToMessageId
+                    )
+
+                    if (userMessageId != null) {
+                        sendDocument.replyToMessageId = userMessageId
+                    }
+                }
+
+                execute(sendDocument)
+                log.info("Video sent: operator=$operatorId → user=$userChatId")
+            } catch (e: TelegramApiException) {
+                log.error("Failed to send video to user $userChatId", e)
+            }
         }
     }
 
@@ -1236,7 +1331,7 @@ class TelegramBotImpl(
         saveUser(chatId)
 
         when (text) {
-            "/start" -> {
+            START -> {
                 val name = message.chat.firstName ?: ""
                 val welcome = BotMessage.WELCOME_MESSAGE.getText(
                     Language.UZB,
