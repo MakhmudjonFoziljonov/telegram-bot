@@ -121,7 +121,7 @@ class TelegramBotImpl(
             }
 
             if (user.role != Role.OPERATOR) {
-                handleRegularUserMessage(user, text, chatIdStr, messageId)
+                handleRegularUserMessage(user, text, chatIdStr, messageId, message)
             } else {
                 handleOperatorResponse(user, text, messageId, replyMessageId)
             }
@@ -554,11 +554,16 @@ class TelegramBotImpl(
                             sendReplyMessage(userChatId, text, userMessageId)
                             log.info(" Reply sent: operator=$operatorChatId → user=$userChatId (replyTo=$userMessageId)")
                         } else {
-                            sendMessage(userChatId, text)
+                            val sentMessage = execute(SendMessage(userChatId, text))
+                            saveMessageMapping(operatorChatId,userChatId, sentMessage.messageId.toString(), userMessageId.toString())
+//                            sendMessage(userChatId, text)
                             log.info("⚠ Mapping not found for bot message $replyToMessageId, sent as normal")
                         }
                     } else {
-                        sendMessage(userChatId, text)
+                        val sentMessage = execute(SendMessage(userChatId, text))
+
+                        saveMessageMapping(operatorChatId,userChatId, sentMessage.messageId.toString(), sentMessage.messageId.toString())
+//                        sendMessage(userChatId, text)
                         log.info(" Message sent: operator=$operatorChatId → user=$userChatId")
                     }
                 } catch (e: TelegramApiException) {
@@ -645,6 +650,7 @@ class TelegramBotImpl(
         text: String,
         chatId: String,
         messageId: String,
+        message: Message
     ) {
         val userChatId = user.chatId
         val language = user.language
@@ -676,18 +682,32 @@ class TelegramBotImpl(
             val hasActiveSession = operatorUsersRepository.hasActiveSession(operatorChatId, user.chatId)
 
             if (hasActiveSession) {
+                val replyToMessage = message.replyToMessage
+                var replyToBotMessageId: Int? = null
 
+                if (replyToMessage != null) {
+                    replyToBotMessageId = messageMappingRepository.findBotMessageId(
+                        userChatId,
+                        replyToMessage.messageId.toString()
+                    )
+                }
                 val operatorMessage = """
-            📩 Xabar: $text
-            👤 User: ${user.phoneNumber}
-        """.trimIndent()
+                📩 Xabar: $text
+                👤 User: ${user.phoneNumber}
+            """.trimIndent()
 
-                val sentMessage = execute(SendMessage(operatorChatId, operatorMessage))
-                val botMessageId = sentMessage.messageId.toString()
+                val sendMsg = SendMessage(operatorChatId, operatorMessage)
 
-                saveMessageMapping(operatorChatId, userChatId, botMessageId, messageId)
+                if (replyToBotMessageId != null) {
+                    sendMsg.replyToMessageId = replyToBotMessageId
+                }
 
-//                sendMessageToOperator(operatorChatId, operatorMessage)
+//                val sentMessage = execute(sendMsg) TODO()
+//                val botMessageId = sentMessage.messageId.toString()
+//
+//                saveMessageMapping(operatorChatId, userChatId, botMessageId, messageId)
+
+                sendMessageToOperator(operatorChatId, operatorMessage)
                 sendLocalizedMessage(chatId, BotMessage.MESSAGE_SENT_TO_OPERATOR, user.language)
             } else {
                 sendLocalizedMessage(chatId, BotMessage.OPERATOR_OFFLINE, user.language)

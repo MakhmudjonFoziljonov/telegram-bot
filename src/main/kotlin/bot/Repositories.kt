@@ -289,6 +289,22 @@ interface MessageMappingRepository : BaseRepository<MessageMapping> {
         botMessageId: String?
     ): Int?
 
+    @Query(
+        value = """
+        SELECT CAST(bot_message_id AS INTEGER)
+        FROM message_mapping 
+        WHERE user_chat_id = :userChatId 
+        AND user_message_id = :userMessageId
+        ORDER BY created_date DESC
+        LIMIT 1
+    """,
+        nativeQuery = true
+    )
+    fun findBotMessageId(
+        userChatId: String,
+        userMessageId: String
+    ): Int?
+
     @Modifying
     @Transactional
     @Query(
