@@ -40,10 +40,8 @@ interface TelegramBot {
     fun sendMessageWithContactButton(chatId: String, text: String)
 
     fun handleContact(message: Message)
-    fun handleOperatorResponse(operator: User, text: String, replyMessageId: String?)
     fun handleCallbackQueryUser(callbackQuery: CallbackQuery)
     fun handleNewUser(chatId: String, text: String, message: Message)
-    fun handleRegularUserMessage(user: User, text: String, chatId: String, messageId: String)
     fun handleCallbackQuery(callbackQuery: CallbackQuery, mainLanguage: Language)
 
     fun handleUserPhoto(user: User, message: Message, messageId: String)
@@ -53,7 +51,7 @@ interface TelegramBot {
     fun handleOperatorVideo(operator: User, message: Message, replyToMessageId: String?)
 
     fun handleUserDocument(user: User, message: Message, messageId: String)
-    fun handleOperatorDocument(operator: User, message: Message, replyToMessageId: String)
+    fun handleOperatorDocument(operator: User, message: Message, replyToMessageId: String?)
 
     fun saveUser(chatId: String)
     fun saveLanguageUser(message: SendMessage, language: String)
@@ -101,7 +99,7 @@ class TelegramBotImpl(
         if (update.hasMessage() && update.message.hasText()) {
 
             val message = update.message
-            val replyMessageId = message.replyToMessage?.messageId.toString()
+            val replyMessageId = message.replyToMessage?.messageId?.toString()
             val messageId = message.messageId.toString()
             val text = message.text
             val chatId = message.chatId
@@ -125,7 +123,7 @@ class TelegramBotImpl(
             if (user.role != Role.OPERATOR) {
                 handleRegularUserMessage(user, text, chatIdStr, messageId)
             } else {
-                handleOperatorResponse(user, text, replyMessageId)
+                handleOperatorResponse(user, text, messageId, replyMessageId)
             }
 
         } else if (update.hasCallbackQuery()) {
@@ -150,7 +148,7 @@ class TelegramBotImpl(
             val message = update.message
             val messageId = message.messageId
             val chatIdStr = message.chatId.toString()
-            val replyToMessageId = message.replyToMessage?.messageId.toString()
+            val replyMessageId = message.replyToMessage?.messageId?.toString()
 
             val user = userRepository.findByChatId(chatIdStr) ?: throw UserNotFoundException()
 
@@ -165,14 +163,14 @@ class TelegramBotImpl(
             if (user.role != Role.OPERATOR) {
                 handleUserPhoto(user, message, messageId.toString())
             } else {
-                handleOperatorPhoto(user, message, replyToMessageId)
+                handleOperatorPhoto(user, message, replyMessageId)
             }
 
         } else if (update.hasMessage() && update.message.hasVideo()) {
             val message = update.message
             val messageId = message.messageId
             val chatIdStr = message.chatId.toString()
-            val replyToMessageId = message.replyToMessage?.messageId.toString()
+            val replyMessageId = message.replyToMessage?.messageId?.toString()
 
             val user = userRepository.findByChatId(chatIdStr) ?: throw UserNotFoundException()
 
@@ -187,13 +185,13 @@ class TelegramBotImpl(
             if (user.role != Role.OPERATOR) {
                 handleUserVideo(user, message, messageId.toString())
             } else {
-                handleOperatorVideo(user, message, replyToMessageId)
+                handleOperatorVideo(user, message, replyMessageId)
             }
         } else if (update.hasMessage() && update.message.hasDocument()) {
             val message = update.message
             val messageId = message.messageId
             val chatIdStr = message.chatId.toString()
-            val replyToMessageId = message.replyToMessage?.messageId.toString()
+            val replyMessageId = message.replyToMessage?.messageId?.toString()
 
             val user = userRepository.findByChatId(chatIdStr) ?: throw UserNotFoundException()
 
@@ -208,7 +206,7 @@ class TelegramBotImpl(
             if (user.role != Role.OPERATOR) {
                 handleUserDocument(user, message, messageId.toString())
             } else {
-                handleOperatorDocument(user, message, replyToMessageId)
+                handleOperatorDocument(user, message, replyMessageId)
             }
         }
     }
@@ -373,7 +371,7 @@ class TelegramBotImpl(
                     )
 
                     if (userMessageId != null) {
-                        sendVideo.replyToMessageId = userMessageId
+                        sendVideo.replyToMessageId = userMessageId.toInt()
                     }
                 }
 
@@ -449,7 +447,7 @@ class TelegramBotImpl(
         }
     }
 
-    override fun handleOperatorResponse(operator: User, text: String, replyMessageId: String?) {
+    private fun handleOperatorResponse(operator: User, text: String, messageId: String, replyMessageId: String?) {
         val operatorLanguage = operator.language.name
         val operatorLanguageEnum = operator.language
         val operatorDbId = operator.id
@@ -518,26 +516,26 @@ class TelegramBotImpl(
     }
 
     private fun handleOperatorMessage(
-        operatorId: String,
+        operatorChatId: String,
         text: String,
         operatorLanguage: String,
         replyToMessageId: String?
     ) {
-        userRepository.findByChatId(operatorId)?.let { operator ->
+        userRepository.findByChatId(operatorChatId)?.let { operator ->
             if (operator.userEnded) {
                 sendLocalizedMessage(
-                    operatorId,
+                    operatorChatId,
                     BotMessage.OPERATOR_TEXT_BEGIN_WORK,
                     Language.valueOf(operatorLanguage)
                 )
                 return
             }
 
-            val activeUsers = userRepository.findActiveUsersByOperator(operatorId)
+            val activeUsers = userRepository.findActiveUsersByOperator(operatorChatId)
 
             if (activeUsers.isEmpty()) {
                 sendLocalizedMessage(
-                    operatorId,
+                    operatorChatId,
                     BotMessage.OPERATOR_ANSWER_USERS_NOT_ONLINE,
                     Language.valueOf(operatorLanguage)
                 )
@@ -548,20 +546,20 @@ class TelegramBotImpl(
                 try {
                     if (replyToMessageId != null) {
                         val userMessageId = messageMappingRepository.findUserMessageId(
-                            operatorId,
+                            operatorChatId,
                             replyToMessageId
                         )
 
                         if (userMessageId != null) {
                             sendReplyMessage(userChatId, text, userMessageId)
-                            log.info(" Reply sent: operator=$operatorId → user=$userChatId (replyTo=$userMessageId)")
+                            log.info(" Reply sent: operator=$operatorChatId → user=$userChatId (replyTo=$userMessageId)")
                         } else {
                             sendMessage(userChatId, text)
                             log.info("⚠ Mapping not found for bot message $replyToMessageId, sent as normal")
                         }
                     } else {
                         sendMessage(userChatId, text)
-                        log.info(" Message sent: operator=$operatorId → user=$userChatId")
+                        log.info(" Message sent: operator=$operatorChatId → user=$userChatId")
                     }
                 } catch (e: TelegramApiException) {
                     log.error(" Failed to send message to user $userChatId", e)
@@ -642,13 +640,13 @@ class TelegramBotImpl(
         log.info("Operator with $operatorId ended work")
     }
 
-    override fun handleRegularUserMessage(
+    private fun handleRegularUserMessage(
         user: User,
         text: String,
         chatId: String,
-        messageId: String
+        messageId: String,
     ) {
-        val userChatId = user.chatId;
+        val userChatId = user.chatId
         val language = user.language
 
         when (text) {
@@ -669,8 +667,8 @@ class TelegramBotImpl(
                 return
             }
         }
-        val operatorChatId = userRepository
-            .findAvailableOperatorByLanguage(user.language.name)
+
+        val operatorChatId = userRepository.findAvailableOperatorByLanguage(user.language.name)
 
         if (operatorChatId == null) {
             sendLocalizedMessage(chatId, BotMessage.NO_OPERATOR_AVAILABLE, user.language)
@@ -790,7 +788,6 @@ class TelegramBotImpl(
                 val sentMessage = execute(sendDocument)
                 val botMessageId = sentMessage.messageId.toString()
 
-                saveMessageMapping(operatorChatId, userChatId, botMessageId, messageId)
 
                 sendLocalizedMessage(userChatId, BotMessage.MESSAGE_SENT_TO_OPERATOR, language)
             } catch (e: TelegramApiException) {
@@ -801,7 +798,7 @@ class TelegramBotImpl(
         }
     }
 
-    override fun handleOperatorDocument(operator: User, message: Message, replyToMessageId: String) {
+    override fun handleOperatorDocument(operator: User, message: Message, replyToMessageId: String?) {
         val operatorId = userRepository.findExactOperatorByLanguage(operator.language.name)
             ?: throw OperatorNotFoundException()
 
@@ -845,7 +842,7 @@ class TelegramBotImpl(
                     )
 
                     if (userMessageId != null) {
-                        sendDocument.replyToMessageId = userMessageId
+                        sendDocument.replyToMessageId = userMessageId.toInt()
                     }
                 }
 
