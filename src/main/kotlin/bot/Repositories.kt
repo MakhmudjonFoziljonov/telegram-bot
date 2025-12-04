@@ -71,6 +71,16 @@ interface UserRepository : BaseRepository<User> {
     )
     fun findExactOperatorByLanguage(@Param("language") language: String): String?
 
+    @Query(
+        value = """
+        select chat_id
+          from users
+            where role = 'OPERATOR'
+            and id = :operatorId
+    """, nativeQuery = true
+    )
+    fun findExactOperatorById(operatorId: Long): String?
+
 
     @Query(
         value = """

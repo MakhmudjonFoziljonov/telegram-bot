@@ -140,6 +140,16 @@ enum class BotMessage(
         rus = "Чтобы начать работу, нажмите кнопку /begin",
         eng = "To start work, press the /begin button",
     ),
+    OPERATOR_TEXT_END_WORK(
+        uzb = "Ishni tugatish uchun pastdagi tugmani bosing",
+        rus = "Чтобы закончить работу, нажмите кнопку ниже",
+        eng = "To end work, press the button below",
+    ),
+    OPERATOR_TEXT_BEGIN_WORK_BUTTON(
+        uzb = "Ishni boshlash uchun pastdagi tugmani bosing",
+        rus = "Чтобы начать работу, нажмите кнопку ниже",
+        eng = "To start work, press the button bellow",
+    ),
     END_SESSION(
         uzb = "Botdan foydalanganiz uchun ming rahmat!",
         rus = "Спасибо за использование бота!",
