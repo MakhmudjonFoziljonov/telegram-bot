@@ -17,6 +17,8 @@ import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKe
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.KeyboardButton
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.KeyboardRow
 import org.telegram.telegrambots.meta.exceptions.TelegramApiException
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.ConcurrentLinkedQueue
 
 interface TelegramBot {
     fun startMessage(chatId: String, text: String)
@@ -81,9 +83,12 @@ class TelegramBotImpl(
     private val log = LoggerFactory.getLogger(BotInitializer::class.java)
     private val operatorLanguageSelection = mutableMapOf<String, OperatorLanguageState>()
 
+    private val waitingQueues: ConcurrentHashMap<Language, ConcurrentLinkedQueue<String>> = ConcurrentHashMap()
+    private val pendingMessages: ConcurrentHashMap<String, ConcurrentLinkedQueue<String>> = ConcurrentHashMap()
+
+
     override fun getBotUsername(): String = botConfig.botName
     override fun getBotToken(): String = botConfig.botToken
-
     override fun onUpdateReceived(update: Update) {
         if (update.hasMessage() && update.message.hasText()) {
 
@@ -133,6 +138,67 @@ class TelegramBotImpl(
         }
     }
 
+    private fun enqueueUser(language: Language, userChatId: String): Int {
+        val queue = waitingQueues.computeIfAbsent(language) { ConcurrentLinkedQueue() }
+        if (!queue.contains(userChatId)) queue.offer(userChatId)
+        var pos = 1
+        for (id in queue) {
+            if (id == userChatId) return pos
+            pos++
+        }
+        return pos
+    }
+
+    private fun isUserInQueue(language: Language, userChatId: String): Boolean =
+        waitingQueues[language]?.contains(userChatId) ?: false
+
+    private fun getQueuePosition(language: Language, userChatId: String): Int {
+        val queue = waitingQueues[language] ?: return -1
+        var pos = 1
+        for (id in queue) {
+            if (id == userChatId) return pos
+            pos++
+        }
+        return -1
+    }
+
+    private fun removeFromQueue(language: Language, userChatId: String): Boolean {
+        val queue = waitingQueues[language] ?: return false
+        return queue.remove(userChatId)
+    }
+
+    private fun dequeueUser(language: Language): String? =
+        waitingQueues[language]?.poll()
+
+
+    private fun addPendingMessage(userChatId: String, text: String) {
+        val q = pendingMessages.computeIfAbsent(userChatId) { ConcurrentLinkedQueue() }
+        q.offer(text)
+    }
+
+    private fun getAndClearPendingMessages(userChatId: String): List<String> {
+        val q = pendingMessages.remove(userChatId) ?: return emptyList()
+        val out = mutableListOf<String>()
+        while (true) {
+            val m = q.poll() ?: break
+            out.add(m)
+        }
+        return out
+    }
+
+    private fun deliverPendingMessagesToOperator(operatorChatId: String, userChatId: String) {
+        val messages = getAndClearPendingMessages(userChatId)
+        if (messages.isEmpty()) return
+
+        messages.forEach { msg ->
+            try {
+                sendMessageToOperator(operatorChatId, msg)
+            } catch (e: TelegramApiException) {
+                log.error("Failed to deliver pending message from $userChatId to operator $operatorChatId", e)
+            }
+        }
+    }
+
     override fun sendMessageWithContactButton(chatId: String, text: String) {
         val message = SendMessage(chatId, text)
         message.replyMarkup = shareContactBtn()
@@ -151,7 +217,6 @@ class TelegramBotImpl(
         val operatorChatId = userRepository.findExactOperatorById(operatorDbId!!) ?: throw OperatorNotFoundException()
 
         if (text == "/end") {
-//            handleEndCommand(operatorChatId, operatorLanguage, operatorDbId!!)
             notifyAndUpdateSessions(operatorChatId, operatorLanguage)
             return
         }
@@ -183,7 +248,7 @@ class TelegramBotImpl(
                 var foundUser: String? = null
 
                 for (language in languages) {
-                    val waitingUser = userRepository.findFirstWaitingUserByLanguage(language)
+                    val waitingUser = dequeueUser(Language.valueOf(language))
                     if (waitingUser != null) {
                         foundUser = waitingUser
                         break
@@ -201,7 +266,9 @@ class TelegramBotImpl(
 
                 try {
                     userRepository.updateBusyByChatId(operatorChatId)
+                    deliverPendingMessagesToOperator(operatorChatId, foundUser)
                     saveOperatorUserRelationIfNotExists(operatorChatId, foundUser)
+
                     notifyOperatorOnWorkStart(operatorChatId)
                     notifyClientOnOperatorJoin(foundUser)
 
@@ -245,52 +312,6 @@ class TelegramBotImpl(
         }
     }
 
-    private fun handleEndCommand(operatorId: String, operatorLanguage: String, operatorDbId: Long) {
-        val currentUser = operatorUsersRepository.findCurrentUserByOperator(operatorId)
-
-        if (currentUser != null) {
-            operatorUsersRepository.updateSession(operatorId, currentUser)
-
-            userRepository.findLanguageByChatId(currentUser)?.let { userLang ->
-                sendLocalizedMessage(currentUser, BotMessage.END_SESSION, Language.valueOf(userLang))
-            }
-            sendLocalizedMessage(operatorId, BotMessage.THANK_YOU, Language.valueOf(operatorLanguage))
-            log.info("Operator $operatorId ended session with user $currentUser")
-
-            val languages = operatorUsersRepository.findLanguagesOperator(operatorDbId)
-
-            var nextUser: String? = null
-
-            for (lang in languages) {
-                val waiting = userRepository.findFirstWaitingUserByLanguage(lang)
-                if (waiting != null) {
-                    nextUser = waiting
-                    break
-                }
-            }
-
-            if (nextUser != null) {
-                saveOperatorUserRelationIfNotExists(operatorId, nextUser)
-                notifyClientOnOperatorJoin(nextUser)
-                notifyOperatorOnWorkStart(operatorId)
-
-            } else {
-                userRepository.updateBusyByChatId(operatorId)
-                sendLocalizedMessage(
-                    operatorId,
-                    BotMessage.OPERATOR_ANSWER_USERS_NOT_ONLINE,
-                    Language.valueOf(operatorLanguage)
-                )
-            }
-        } else {
-            sendLocalizedMessage(
-                operatorId,
-                BotMessage.OPERATOR_ANSWER_USERS_NOT_ONLINE,
-                Language.valueOf(operatorLanguage)
-            )
-        }
-    }
-
     override fun notifyAndUpdateSessions(operatorId: String, operatorLanguage: String) {
         notifyOperatorOnWorkEnd(operatorId)
         userRepository.updateBusyEndByChatId(operatorId)
@@ -307,18 +328,19 @@ class TelegramBotImpl(
 
         log.info("Operator with $operatorId ended work")
     }
-
     override fun handleRegularUserMessage(
         user: User,
         text: String,
         chatId: String,
     ) {
-        val userChatId = user.chatId;
+        val userChatId = user.chatId
         val language = user.language
 
         when (text) {
             "/start" -> {
                 userRepository.updateUserEndedStatusToFalse(userChatId)
+                sendLocalizedMessage(userChatId, BotMessage.NO_OPERATOR_AVAILABLE, language)
+                enqueueUser(language, userChatId)
                 return
             }
 
@@ -328,25 +350,109 @@ class TelegramBotImpl(
             }
 
             "/end" -> {
+                val activeOperator = userRepository.findOperatorByActiveSession(userChatId)
+
                 operatorUsersRepository.updateSession(null, userChatId)
                 userRepository.updateUserEndedStatus(userChatId)
                 sendLocalizedMessage(userChatId, BotMessage.END_SESSION, language)
+
+                removeFromQueue(language, userChatId)
+                pendingMessages.remove(userChatId)
+
+                if (activeOperator != null) {
+                    tryConnectNextUserToOperator(activeOperator)
+                }
                 return
             }
         }
-        val operatorChatIdV2 = userRepository
-            .findAvailableOperatorByLanguage(user.language.name)
 
-        if (operatorChatIdV2 == null) {
-            sendLocalizedMessage(chatId, BotMessage.NO_OPERATOR_AVAILABLE, user.language)
-        } else {
-            val hasActiveSession = operatorUsersRepository.hasActiveSession(operatorChatIdV2, user.chatId)
+        val activeOperator = userRepository.findOperatorByActiveSession(userChatId)
 
-            if (hasActiveSession) {
+        if (activeOperator != null) {
+            sendMessageToOperator(activeOperator, text)
+            return
+        }
+
+        addPendingMessage(userChatId, text)
+
+        if (!isUserInQueue(language, userChatId)) {
+            enqueueUser(language, userChatId)
+        }
+
+        val operatorChatIdV2 = userRepository.findAvailableOperatorByLanguage(user.language.name) ?: return
+
+        val operatorBusy = operatorUsersRepository.isOperatorBusy(operatorChatIdV2)
+        if (operatorBusy) {
+            return
+        }
+
+        val queuedUser = dequeueUser(language)
+        if (queuedUser != null) {
+            if (queuedUser == userChatId) {
+
+                saveOperatorUserRelationIfNotExists(operatorChatIdV2, userChatId)
+                userRepository.updateBusyByChatId(operatorChatIdV2)
+                notifyClientOnOperatorJoin(userChatId)
+                notifyOperatorOnWorkStart(operatorChatIdV2)
                 sendMessageToOperator(operatorChatIdV2, text)
+
+                deliverPendingMessagesToOperator(operatorChatIdV2, userChatId)
             } else {
-                sendLocalizedMessage(chatId, BotMessage.OPERATOR_OFFLINE, user.language)
+
+                saveOperatorUserRelationIfNotExists(operatorChatIdV2, queuedUser)
+                userRepository.updateBusyByChatId(operatorChatIdV2)
+                notifyClientOnOperatorJoin(queuedUser)
+                notifyOperatorOnWorkStart(operatorChatIdV2)
+
+                deliverPendingMessagesToOperator(operatorChatIdV2, queuedUser)
+
+                enqueueUser(language, userChatId)
             }
+            return
+        }
+
+        saveOperatorUserRelationIfNotExists(operatorChatIdV2, userChatId)
+        userRepository.updateBusyByChatId(operatorChatIdV2)
+        notifyClientOnOperatorJoin(userChatId)
+        notifyOperatorOnWorkStart(operatorChatIdV2)
+
+//        deliverPendingMessagesToOperator(operatorChatIdV2, userChatId)
+
+        sendMessageToOperator(operatorChatIdV2, text)
+    }
+
+    private fun tryConnectNextUserToOperator(operatorChatId: String) {
+        val operatorDbId = userRepository.findByChatId(operatorChatId)?.id ?: return
+        val languages = operatorUsersRepository.findLanguagesOperator(operatorDbId)
+
+        var nextUser: String? = null
+
+        for (lang in languages) {
+            val waitingUser = dequeueUser(Language.valueOf(lang))
+            if (waitingUser != null) {
+                nextUser = waitingUser
+                break
+            }
+        }
+
+        if (nextUser != null) {
+            saveOperatorUserRelationIfNotExists(operatorChatId, nextUser)
+            userRepository.updateBusyByChatId(operatorChatId)
+            notifyClientOnOperatorJoin(nextUser)
+            notifyOperatorOnWorkStart(operatorChatId)
+
+            deliverPendingMessagesToOperator(operatorChatId, nextUser)
+
+            log.info("Operator $operatorChatId automatically connected to next user $nextUser")
+        } else {
+            userRepository.updateBusyByChatId(operatorChatId)
+            val operatorLang = userRepository.findLanguageByChatId(operatorChatId) ?: "UZB"
+            sendLocalizedMessage(
+                operatorChatId,
+                BotMessage.OPERATOR_ANSWER_USERS_NOT_ONLINE,
+                Language.valueOf(operatorLang)
+            )
+            log.info("No waiting users for operator $operatorChatId")
         }
     }
 

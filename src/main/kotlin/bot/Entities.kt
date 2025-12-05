@@ -55,3 +55,10 @@ class OperatorUsers(
     var userChatId: String,
     var session: Boolean = true
 )
+
+@Entity
+@Table(name = "waiting_users")
+data class WaitingUserEntity(
+    @Id val chatId: String,
+    @Enumerated(EnumType.STRING) val language: Language,
+)

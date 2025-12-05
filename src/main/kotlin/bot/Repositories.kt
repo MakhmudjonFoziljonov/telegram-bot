@@ -136,6 +136,7 @@ interface UserRepository : BaseRepository<User> {
         WHERE u.role = 'OPERATOR'
             AND u.deleted = false      
             AND ul.languages = :language
+            AND u.user_ended = false
         ORDER BY u.created_date ASC
         LIMIT 1
     """, nativeQuery = true
@@ -175,23 +176,52 @@ interface UserRepository : BaseRepository<User> {
 
     @Modifying
     @Transactional
-    @Query(value = "update users set user_ended = true where chat_id = :userChatId and role = 'USER' ", nativeQuery = true)
+    @Query(
+        value = "update users set user_ended = true where chat_id = :userChatId and role = 'USER' ",
+        nativeQuery = true
+    )
     fun updateUserEndedStatus(userChatId: String)
 
     @Modifying
     @Transactional
-    @Query(value = "update users set user_ended = false where chat_id = :userChatId and role = 'USER' ", nativeQuery = true)
+    @Query(
+        value = "update users set user_ended = false where chat_id = :userChatId and role = 'USER' ",
+        nativeQuery = true
+    )
     fun updateUserEndedStatusToFalse(userChatId: String)
 
     @Modifying
     @Transactional
-    @Query(value = "update users set user_ended = true where chat_id = :userChatId and role = 'OPERATOR' ", nativeQuery = true)
+    @Query(
+        value = "update users set user_ended = true where chat_id = :userChatId and role = 'OPERATOR' ",
+        nativeQuery = true
+    )
     fun updateOperatorEndedStatus(userChatId: String)
 
     @Modifying
     @Transactional
-    @Query(value = "update users set user_ended = false where chat_id = :userChatId and role = 'OPERATOR' ", nativeQuery = true)
+    @Query(
+        value = "update users set user_ended = false where chat_id = :userChatId and role = 'OPERATOR' ",
+        nativeQuery = true
+    )
     fun updateOperatorEndedStatusToTrue(userChatId: String)
+
+    @Query(value = "select user_ended from users where chat_id = :userChatId", nativeQuery = true)
+    fun findUserEnded(userChatId: String): Boolean
+
+    @Query(value = "select user_ended from users where chat_id = :operatorChatId", nativeQuery = true)
+    fun findOperatorEnded(operatorChatId: String): Boolean
+
+    @Query(
+        """
+    SELECT ou.operator_chat_id 
+    FROM operator_users ou 
+    WHERE ou.user_chat_id = :userChatId 
+    AND ou.session = true
+    LIMIT 1
+""", nativeQuery = true
+    )
+    fun findOperatorByActiveSession(userChatId: String): String?
 
 }
 
@@ -269,5 +299,27 @@ interface OperatorUsersRepository : JpaRepository<OperatorUsers, Long> {
         nativeQuery = true
     )
     fun findCurrentUserByOperator(operatorChatId: String): String?
+
+    @Query(
+        value = """
+            SELECT operator_chat_id 
+            FROM operator_users
+            WHERE user_chat_id = :userChatId
+            AND session = true
+            LIMIT 1
+        """,
+        nativeQuery = true
+    )
+    fun findOperatorByUserChatId(userChatId: String): String?
+
+    @Query(
+        value = """
+    SELECT COUNT(*) > 0 FROM operator_users
+    WHERE operator_chat_id = :operatorChatId
+      AND session = true
+    """,
+        nativeQuery = true
+    )
+    fun isOperatorBusy(operatorChatId: String): Boolean
 
 }
