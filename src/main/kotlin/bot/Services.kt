@@ -312,8 +312,98 @@ class TelegramBotImpl(
             } else {
                 handleOperatorSticker(user, message)
             }
+        }  else if (update.hasMessage() && update.message.hasVideoNote()) {
+            val message = update.message
+            val chatIdStr = message.chatId.toString()
+
+            val user = userRepository.findByChatId(chatIdStr) ?: return
+
+            if (user.phoneNumber.isEmpty() && user.role != Role.OPERATOR) {
+                sendMessageWithContactButton(
+                    chatIdStr,
+                    BotMessage.PHONE_ANSWER_TEXT.getText(user.language)
+                )
+                return
+            }
+
+            if (user.role != Role.OPERATOR) {
+                handleUserVideoNote(user, message)
+            } else {
+                handleOperatorVideoNote(user, message)
+            }
         }
 
+    }
+    private fun handleUserVideoNote(user: User, message: Message) {
+        val userChatId = user.chatId
+        val language = user.language
+
+        val videoNote = message.videoNote ?: return
+
+        val fileId = videoNote.fileId
+
+        val activeOperator = userRepository.findOperatorByActiveSession(userChatId)
+
+        if (activeOperator != null) {
+            try {
+                val sendVideoNote = SendVideoNote()
+                sendVideoNote.chatId = activeOperator
+                sendVideoNote.videoNote = InputFile(fileId)
+
+                execute(sendVideoNote)
+                log.info(" VideoNote sent: user=$userChatId → operator=$activeOperator ")
+            } catch (e: TelegramApiException) {
+                log.error(" Failed to video note sticker to operator $activeOperator", e)
+            }
+            return
+        }
+
+//        if (!isUserInQueue(language, userChatId)) {
+//            enqueueUser(language, userChatId)
+//        }
+
+        sendLocalizedMessage(userChatId, BotMessage.NO_OPERATOR_AVAILABLE, language)
+    }
+
+    private fun handleOperatorVideoNote(operator: User, message: Message) {
+        val operatorChatId = userRepository.findExactOperatorById(operator.id!!) ?: throw OperatorNotFoundException()
+
+        if (operator.userEnded) {
+            sendLocalizedMessage(
+                operatorChatId,
+                BotMessage.OPERATOR_TEXT_BEGIN_WORK,
+                operator.language
+            )
+            return
+        }
+
+        val videoNote = message.videoNote ?: return
+
+        val fileId = videoNote.fileId
+
+        val activeUsers = userRepository.findActiveUsersByOperator(operatorChatId)
+
+        if (activeUsers.isEmpty()) {
+            sendLocalizedMessage(
+                operatorChatId,
+                BotMessage.OPERATOR_ANSWER_USERS_NOT_ONLINE,
+                operator.language
+            )
+            return
+        }
+
+        activeUsers.forEach { userChatId ->
+            try {
+                val sendVideo = SendVideoNote()
+                sendVideo.chatId = userChatId
+                sendVideo.videoNote = InputFile(fileId)
+
+                execute(sendVideo)
+                log.info(" VideoNote sent: operator=$operatorChatId → user=$userChatId")
+            } catch (e: TelegramApiException) {
+                log.error(" Failed to send video note to user $userChatId", e)
+            }
+        }
     }
 
     private fun handleUserSticker(user: User, message: Message) {
