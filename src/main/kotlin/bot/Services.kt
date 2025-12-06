@@ -5,10 +5,7 @@ import org.slf4j.LoggerFactory
 import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.stereotype.Component
 import org.telegram.telegrambots.bots.TelegramLongPollingBot
-import org.telegram.telegrambots.meta.api.methods.send.SendDocument
-import org.telegram.telegrambots.meta.api.methods.send.SendMessage
-import org.telegram.telegrambots.meta.api.methods.send.SendPhoto
-import org.telegram.telegrambots.meta.api.methods.send.SendVideo
+import org.telegram.telegrambots.meta.api.methods.send.*
 import org.telegram.telegrambots.meta.api.methods.updatingmessages.EditMessageReplyMarkup
 import org.telegram.telegrambots.meta.api.objects.CallbackQuery
 import org.telegram.telegrambots.meta.api.objects.InputFile
@@ -258,8 +255,100 @@ class TelegramBotImpl(
             } else {
                 handleOperatorDocument(user, message, replyMessageId)
             }
+        } else if (update.hasMessage() && update.message.hasVoice()) {
+            val message = update.message
+            val chatIdStr = message.chatId.toString()
+
+            val user = userRepository.findByChatId(chatIdStr) ?: return
+
+            if (user.phoneNumber.isEmpty() && user.role != Role.OPERATOR) {
+                sendMessageWithContactButton(
+                    chatIdStr,
+                    BotMessage.PHONE_ANSWER_TEXT.getText(user.language)
+                )
+                return
+            }
+
+            if (user.role != Role.OPERATOR) {
+                handleUserVoice(user, message)
+            } else {
+                handleOperatorVoice(user, message)
+            }
+        }
+
+    }
+
+    private fun handleOperatorVoice(operator: User, message: Message) {
+        val operatorChatId = userRepository.findExactOperatorById(operator.id!!) ?: throw OperatorNotFoundException()
+
+        if (operator.userEnded) {
+            sendLocalizedMessage(
+                operatorChatId,
+                BotMessage.OPERATOR_TEXT_BEGIN_WORK,
+                operator.language
+            )
+            return
+        }
+
+        val voice = message.voice ?: return
+
+        val fileId = voice.fileId
+
+        val activeUsers = userRepository.findActiveUsersByOperator(operatorChatId)
+
+        if (activeUsers.isEmpty()) {
+            sendLocalizedMessage(
+                operatorChatId,
+                BotMessage.OPERATOR_ANSWER_USERS_NOT_ONLINE,
+                operator.language
+            )
+            return
+        }
+
+        activeUsers.forEach { userChatId ->
+            try {
+                val sendVoice = SendVoice()
+                sendVoice.chatId = userChatId
+                sendVoice.voice = InputFile(fileId)
+
+                execute(sendVoice)
+                log.info(" Voice sent: operator=$operatorChatId → user=$userChatId")
+            } catch (e: TelegramApiException) {
+                log.error(" Failed to send voice to user $userChatId", e)
+            }
         }
     }
+
+    private fun handleUserVoice(user: User, message: Message) {
+        val userChatId = user.chatId
+        val language = user.language
+
+        val voice = message.voice ?: return
+
+        val fileId = voice.fileId
+
+        val activeOperator = userRepository.findOperatorByActiveSession(userChatId)
+
+        if (activeOperator != null) {
+            try {
+                val sendVoice = SendVoice()
+                sendVoice.chatId = activeOperator
+                sendVoice.voice = InputFile(fileId)
+
+                execute(sendVoice)
+                log.info( " Voice sent: user=$userChatId → operator=$activeOperator")
+            } catch (e: TelegramApiException) {
+                log.error(" Failed to send voice to operator $activeOperator", e)
+            }
+            return
+        }
+//
+//        if (!isUserInQueue(language, userChatId)) {
+//            enqueueUser(language, userChatId)
+//        }
+        sendLocalizedMessage(userChatId, BotMessage.NO_OPERATOR_AVAILABLE, language)
+    }
+
     private fun handleUserDocument(user: User, message: Message, messageId: String) {
 
         val userChatId = user.chatId
