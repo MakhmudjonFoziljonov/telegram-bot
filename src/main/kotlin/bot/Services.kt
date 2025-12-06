@@ -274,8 +274,101 @@ class TelegramBotImpl(
             } else {
                 handleOperatorVoice(user, message)
             }
+        } else if (update.hasMessage() && update.message.hasAudio()) {
+            val message = update.message
+            val chatIdStr = message.chatId.toString()
+
+            val user = userRepository.findByChatId(chatIdStr) ?: return
+
+            if (user.phoneNumber.isEmpty() && user.role != Role.OPERATOR) {
+                sendMessageWithContactButton(
+                    chatIdStr,
+                    BotMessage.PHONE_ANSWER_TEXT.getText(user.language)
+                )
+                return
+            }
+
+            if (user.role != Role.OPERATOR) {
+                handleUserAudio(user, message)
+            } else {
+                handleOperatorAudio(user, message)
+            }
         }
 
+    }
+
+    private fun handleOperatorAudio(operator: User, message: Message) {
+        val operatorChatId = userRepository.findExactOperatorById(operator.id!!) ?: throw OperatorNotFoundException()
+
+        if (operator.userEnded) {
+            sendLocalizedMessage(
+                operatorChatId,
+                BotMessage.OPERATOR_TEXT_BEGIN_WORK,
+                operator.language
+            )
+            return
+        }
+
+        val audio = message.audio ?: return
+
+        val fileId = audio.fileId
+        val title = audio.title ?: "Audio"
+
+        val activeUsers = userRepository.findActiveUsersByOperator(operatorChatId)
+
+        if (activeUsers.isEmpty()) {
+            sendLocalizedMessage(
+                operatorChatId,
+                BotMessage.OPERATOR_ANSWER_USERS_NOT_ONLINE,
+                operator.language
+            )
+            return
+        }
+
+        activeUsers.forEach { userChatId ->
+            try {
+                val sendAudio = SendAudio()
+                sendAudio.chatId = userChatId
+                sendAudio.audio = InputFile(fileId)
+
+                execute(sendAudio)
+                log.info(" Audio sent: operator=$operatorChatId → user=$userChatId ($title)")
+            } catch (e: TelegramApiException) {
+                log.error(" Failed to send audio to user $userChatId", e)
+            }
+        }
+    }
+
+    private fun handleUserAudio(user: User, message: Message) {
+        val userChatId = user.chatId
+        val language = user.language
+
+        val audio = message.audio ?: return
+
+        val fileId = audio.fileId
+        val title = audio.title ?: "Audio"
+
+        val activeOperator = userRepository.findOperatorByActiveSession(userChatId)
+
+        if (activeOperator != null) {
+            try {
+                val sendAudio = SendAudio()
+                sendAudio.chatId = activeOperator
+                sendAudio.audio = InputFile(fileId)
+
+                execute(sendAudio)
+                log.info(" Audio sent: user=$userChatId → operator=$activeOperator ($title)")
+            } catch (e: TelegramApiException) {
+                log.error(" Failed to send audio to operator $activeOperator", e)
+            }
+            return
+        }
+
+//        if (!isUserInQueue(language, userChatId)) {
+//            enqueueUser(language, userChatId)
+//        }
+
+        sendLocalizedMessage(userChatId, BotMessage.NO_OPERATOR_AVAILABLE, language)
     }
 
     private fun handleOperatorVoice(operator: User, message: Message) {
