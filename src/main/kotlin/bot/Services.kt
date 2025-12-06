@@ -66,6 +66,7 @@ interface TelegramBot {
     fun removeInlineKeyboard(chatId: Long, messageId: Int)
     fun processLanguageSelection(chatId: Long, callBackData: String)
     fun normalizePhoneNumber(phoneNumber: String): String
+    fun changePhoneNumber(chatId: String, operatorLanguage: String)
 }
 
 private const val CALLBACK_LANGUAGE_COUNT_PREFIX = "LANG_COUNT_"
@@ -85,6 +86,7 @@ class TelegramBotImpl(
 
     private val waitingQueues: ConcurrentHashMap<Language, ConcurrentLinkedQueue<String>> = ConcurrentHashMap()
     private val pendingMessages: ConcurrentHashMap<String, ConcurrentLinkedQueue<String>> = ConcurrentHashMap()
+    private val pendingPhoneChanges: ConcurrentHashMap<String, String> = ConcurrentHashMap()
 
 
     override fun getBotUsername(): String = botConfig.botName
@@ -124,18 +126,84 @@ class TelegramBotImpl(
             val language = userRepository.findLangByChatId(chatId) ?: "UZB"
 
             userRepository.findByChatId(chatId)?.let {
-                adminProcessLanguageSelection(callbackQuery, it, language)
+                if (it.role == Role.OPERATOR) {
+                    adminProcessLanguageSelection(callbackQuery, it, language)
+                } else {
+                    handleCallbackQueryUser(callbackQuery)
+                }
             } ?: throw UserNotFoundException()
 
 
         } else if (update.message?.hasContact() == true) {
             val message = update.message
-            val phoneNumber = message.contact.phoneNumber
+            val currentPhoneNumber = message.contact.phoneNumber
             val chatId = message.chatId.toString()
 
-            updateUserPhoneNumber(chatId, phoneNumber)
-            handleContact(message)
+            val operatorLanguage = userRepository.findLanguageByChatId(chatId) ?: "UZB"
+            val operator = userRepository.checkOnOperator(chatId)
+
+            val user = userRepository.findByChatId(chatId) ?: throw UserNotFoundException()
+
+            if (operator) {
+                sendLocalizedMessage(
+                    chatId,
+                    BotMessage.OPERATOR_CONTACT_NOT_NEEDED,
+                    Language.valueOf(operatorLanguage)
+                )
+                return
+            }
+
+            val normalizePhoneNumber = normalizePhoneNumber(currentPhoneNumber)
+            val phoneNumber = user.phoneNumber
+
+            if (phoneNumber.isEmpty()) {
+                updateUserPhoneNumber(chatId, currentPhoneNumber)
+                sendLocalizedMessage(
+                    chatId,
+                    BotMessage.USER_CONTACT_ANSWER_MESSAGE,
+                    Language.valueOf(operatorLanguage)
+                )
+                return
+            }
+
+            if (phoneNumber != normalizePhoneNumber) {
+                addPendingPhoneChange(chatId, normalizePhoneNumber)
+
+                val confirmMessage = SendMessage()
+                confirmMessage.chatId = chatId
+                confirmMessage.text = BotMessage.PHONE_CHANGE_CONFIRMATION.getText(
+                    Language.valueOf(operatorLanguage),
+                    "oldPhone" to phoneNumber,
+                    "newPhone" to normalizePhoneNumber
+                )
+                confirmMessage.replyMarkup = contactChangeInlineKeyboard(operatorLanguage)
+
+                try {
+                    execute(confirmMessage)
+                } catch (e: TelegramApiException) {
+                    log.error(" Error sending confirmation to $chatId", e)
+                }
+            } else {
+                sendLocalizedMessage(
+                    chatId,
+                    BotMessage.USER_CONTACT_SAME_NUMBER,
+                    Language.valueOf(operatorLanguage)
+                )
+                log.info("⚠ User $chatId sent same phone number")
+            }
         }
+    }
+
+    private fun addPendingPhoneChange(chatId: String, newPhone: String) {
+        pendingPhoneChanges[chatId] = newPhone
+    }
+
+    private fun getPendingPhoneChange(chatId: String): String? {
+        return pendingPhoneChanges[chatId]
+    }
+
+    private fun removePendingPhoneChange(chatId: String) {
+        pendingPhoneChanges.remove(chatId)
     }
 
     private fun enqueueUser(language: Language, userChatId: String): Int {
@@ -328,6 +396,7 @@ class TelegramBotImpl(
 
         log.info("Operator with $operatorId ended work")
     }
+
     override fun handleRegularUserMessage(
         user: User,
         text: String,
@@ -394,7 +463,6 @@ class TelegramBotImpl(
                 userRepository.updateBusyByChatId(operatorChatIdV2)
                 notifyClientOnOperatorJoin(userChatId)
                 notifyOperatorOnWorkStart(operatorChatIdV2)
-                sendMessageToOperator(operatorChatIdV2, text)
 
                 deliverPendingMessagesToOperator(operatorChatIdV2, userChatId)
             } else {
@@ -415,8 +483,6 @@ class TelegramBotImpl(
         userRepository.updateBusyByChatId(operatorChatIdV2)
         notifyClientOnOperatorJoin(userChatId)
         notifyOperatorOnWorkStart(operatorChatIdV2)
-
-//        deliverPendingMessagesToOperator(operatorChatIdV2, userChatId)
 
         sendMessageToOperator(operatorChatIdV2, text)
     }
@@ -487,11 +553,7 @@ class TelegramBotImpl(
     }
 
     override fun adminProcessLanguageSelection(callbackQuery: CallbackQuery, user: User, language: String) {
-        if (user.role == Role.OPERATOR) {
-            handleCallbackQuery(callbackQuery, Language.valueOf(language))
-        } else {
-            handleCallbackQueryUser(callbackQuery)
-        }
+        handleCallbackQuery(callbackQuery, Language.valueOf(language))
     }
 
     override fun notifyOperatorOnWorkEnd(operatorChatId: String) {
@@ -945,13 +1007,65 @@ class TelegramBotImpl(
         return InlineKeyboardMarkup(keyboard)
     }
 
+    private fun contactChangeInlineKeyboard(language: String): InlineKeyboardMarkup {
+        val yesBtn = InlineKeyboardButton().apply {
+            text = BotMessage.YES_TEXT.getText(language)
+            callbackData = "YES_BUTTON"
+        }
+        val notBtn = InlineKeyboardButton().apply {
+            text = BotMessage.NO_TEXT.getText(language)
+            callbackData = "NO_BUTTON"
+        }
+
+        val row: MutableList<InlineKeyboardButton> = ArrayList()
+        row.add(yesBtn)
+        row.add(notBtn)
+        val keyboard: MutableList<MutableList<InlineKeyboardButton>> = ArrayList()
+        keyboard.add(row)
+
+        InlineKeyboardMarkup().keyboard = keyboard
+        return InlineKeyboardMarkup(keyboard)
+    }
+
     override fun handleCallbackQueryUser(callbackQuery: CallbackQuery) {
         val callBackData = callbackQuery.data
         val chatId = callbackQuery.from.id
+        val chatIdStr = callbackQuery.from.id.toString()
         val messageId = callbackQuery.message?.messageId ?: return
 
-        removeInlineKeyboard(chatId, messageId)
-        processLanguageSelection(chatId, callBackData)
+        when (callBackData) {
+            "YES_BUTTON" -> {
+                val newPhone = getPendingPhoneChange(chatIdStr)
+
+                if (newPhone != null) {
+                    updateUserPhoneNumber(chatIdStr, newPhone)
+                    removePendingPhoneChange(chatIdStr)
+                    removeInlineKeyboard(chatId, messageId)
+
+                    val user = userRepository.findByChatId(chatIdStr)
+                    if (user != null) {
+                        sendLocalizedMessage(chatIdStr, BotMessage.PHONE_CHANGED_SUCCESS, user.language)
+                    }
+                } else {
+                    removeInlineKeyboard(chatId, messageId)
+                    sendMessage(chatIdStr, "Xatolik yuz berdi. Qaytadan contact yuboring.")
+                }
+            }
+
+            "NO_BUTTON" -> {
+                removePendingPhoneChange(chatIdStr)
+                removeInlineKeyboard(chatId, messageId)
+                val user = userRepository.findByChatId(chatIdStr)
+                if (user != null) {
+                    sendLocalizedMessage(chatIdStr, BotMessage.PHONE_CHANGE_CANCELLED, user.language)
+                }
+            }
+
+            else -> {
+                removeInlineKeyboard(chatId, messageId)
+                processLanguageSelection(chatId, callBackData)
+            }
+        }
     }
 
     override fun removeInlineKeyboard(chatId: Long, messageId: Int) {
@@ -988,6 +1102,18 @@ class TelegramBotImpl(
             phoneNumber
         } else {
             "+$phoneNumber"
+        }
+    }
+
+    override fun changePhoneNumber(chatId: String, operatorLanguage: String) {
+        val sendMessage = SendMessage()
+        sendMessage.chatId = chatId
+        sendMessage.text = BotMessage.PHONE_CHANGE_CONFIRMATION.getText(operatorLanguage)
+        sendMessage.replyMarkup = contactChangeInlineKeyboard(operatorLanguage)
+        try {
+            execute(sendMessage)
+        } catch (e: TelegramApiException) {
+            log.warn("Error sending message to $chatId: changePhoneNumber", e)
         }
     }
 

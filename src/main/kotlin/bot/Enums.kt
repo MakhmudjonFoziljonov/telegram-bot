@@ -30,10 +30,25 @@ enum class BotMessage(
         rus = "Спасибо! Оператор свяжется с вами в ближайшее время. ",
         eng = "Thank you! Our operator will contact you shortly."
     ),
+    USER_CONTACT_ANSWER_MESSAGE(
+        uzb = "Rahmat!",
+        rus = "Cпасибо!",
+        eng = "Thank you!",
+    ),
     SHARE_CONTACT(
         uzb = "Telefon raqamingizni ulashing:",
         rus = "Поделитесь своим номером телефона:",
         eng = "Share your phone number:"
+    ),
+    OPERATOR_CONTACT_NOT_NEEDED(
+        uzb = "Siz operatorsiz, kontakt kerak emas.",
+        rus = "Вы подключены как оператор, контакт не нужен.",
+        eng = "You are connected as an operator, contact is not needed.",
+    ),
+    USER_CONTACT_SAME_NUMBER(
+        uzb = "⚠ Bu sizning hozirgi telefon raqamingiz. O'zgartirish uchun boshqa raqam yuboring.",
+        rus = "⚠ Это ваш текущий номер телефона. Отправьте другой номер для изменения.",
+        eng = "⚠ This is your current phone number. Send a different number to change it."
     ),
     WELCOME_MESSAGE(
         uzb = "Assalomu alaykum, hurmatli {name}!\n\nTilni tanlang!",
@@ -82,6 +97,17 @@ enum class BotMessage(
         rus = " В данный момент оператор недоступен. Среднее время ответа оператора: 5 мин.",
         eng = " No operator is available at the moment. The operator's average response time is 5 min."
     ),
+    YES_TEXT(
+        uzb = "Ha",
+        rus = "Да",
+        eng = "Yes"
+    ),
+    NO_TEXT(
+        uzb = "Yo'q",
+        rus = "Нет",
+        eng = "No"
+    ),
+
     OPERATOR_OFFLINE(
         uzb = " Operator hozirda offline. Iltimos, keyinroq urinib ko'ring.\n" +
                 "/start tugmasini bosing va operator siz bilan bog'lanishini kuting!",
@@ -149,6 +175,22 @@ enum class BotMessage(
         uzb = "Ishni boshlash uchun pastdagi tugmani bosing",
         rus = "Чтобы начать работу, нажмите кнопку ниже",
         eng = "To start work, press the button bellow",
+    ),
+    PHONE_CHANGE_CONFIRMATION(
+        uzb = "Telefon raqamni o'zgartirasizmi?",
+        rus = "Вы хотите изменить номер телефона?",
+        eng = "Do you want to change your phone number?",
+    ),
+    PHONE_CHANGED_SUCCESS(
+        uzb = " Telefon raqamingiz muvaffaqiyatli o'zgartirildi!",
+        rus = " Ваш номер телефона успешно изменен!",
+        eng = " Your phone number has been changed successfully!"
+    ),
+
+    PHONE_CHANGE_CANCELLED(
+        uzb = " Telefon raqamni o'zgartirish bekor qilindi.",
+        rus = " Изменение номера телефона отменено.",
+        eng = " Phone number change cancelled."
     ),
     END_SESSION(
         uzb = "Botdan foydalanganiz uchun ming rahmat!",
