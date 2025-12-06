@@ -293,9 +293,101 @@ class TelegramBotImpl(
             } else {
                 handleOperatorAudio(user, message)
             }
+        } else if (update.hasMessage() && update.message.hasSticker()) {
+            val message = update.message
+            val chatIdStr = message.chatId.toString()
+
+            val user = userRepository.findByChatId(chatIdStr) ?: return
+
+            if (user.phoneNumber.isEmpty() && user.role != Role.OPERATOR) {
+                sendMessageWithContactButton(
+                    chatIdStr,
+                    BotMessage.PHONE_ANSWER_TEXT.getText(user.language)
+                )
+                return
+            }
+
+            if (user.role != Role.OPERATOR) {
+                handleUserSticker(user, message)
+            } else {
+                handleOperatorSticker(user, message)
+            }
         }
 
     }
+
+    private fun handleUserSticker(user: User, message: Message) {
+        val userChatId = user.chatId
+        val language = user.language
+
+        val sticker = message.sticker ?: return
+
+        val fileId = sticker.fileId
+
+        val activeOperator = userRepository.findOperatorByActiveSession(userChatId)
+
+        if (activeOperator != null) {
+            try {
+                val sendSticker = SendSticker()
+                sendSticker.chatId = activeOperator
+                sendSticker.sticker = InputFile(fileId)
+
+                execute(sendSticker)
+                log.info(" Sticker sent: user=$userChatId → operator=$activeOperator ")
+            } catch (e: TelegramApiException) {
+                log.error(" Failed to send sticker to operator $activeOperator", e)
+            }
+            return
+        }
+
+//        if (!isUserInQueue(language, userChatId)) {
+//            enqueueUser(language, userChatId)
+//        }
+
+        sendLocalizedMessage(userChatId, BotMessage.NO_OPERATOR_AVAILABLE, language)
+    }
+
+    private fun handleOperatorSticker(operator: User, message: Message) {
+        val operatorChatId = userRepository.findExactOperatorById(operator.id!!) ?: throw OperatorNotFoundException()
+
+        if (operator.userEnded) {
+            sendLocalizedMessage(
+                operatorChatId,
+                BotMessage.OPERATOR_TEXT_BEGIN_WORK,
+                operator.language
+            )
+            return
+        }
+
+        val sticker = message.sticker ?: return
+
+        val fileId = sticker.fileId
+
+        val activeUsers = userRepository.findActiveUsersByOperator(operatorChatId)
+
+        if (activeUsers.isEmpty()) {
+            sendLocalizedMessage(
+                operatorChatId,
+                BotMessage.OPERATOR_ANSWER_USERS_NOT_ONLINE,
+                operator.language
+            )
+            return
+        }
+
+        activeUsers.forEach { userChatId ->
+            try {
+                val sendSticker = SendSticker()
+                sendSticker.chatId = userChatId
+                sendSticker.sticker = InputFile(fileId)
+
+                execute(sendSticker)
+                log.info(" Sticker sent: operator=$operatorChatId → user=$userChatId")
+            } catch (e: TelegramApiException) {
+                log.error(" Failed to send sticker to user $userChatId", e)
+            }
+        }
+    }
+
 
     private fun handleOperatorAudio(operator: User, message: Message) {
         val operatorChatId = userRepository.findExactOperatorById(operator.id!!) ?: throw OperatorNotFoundException()
