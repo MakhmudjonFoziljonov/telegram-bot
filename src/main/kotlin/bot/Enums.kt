@@ -75,6 +75,17 @@ enum class BotMessage(
         rus = "Здравствуйте, уважаемый {name}!\n\nВыберите язык!",
         eng = "Hello, dear {name}!\n\nChoose language!"
     ),
+    CHANGE_LANGUAGE_MESSAGE(
+        uzb = "Tilni tanlang!",
+        rus = "Выберите язык!",
+        eng = "Choose language!"
+    ),
+
+    CHANGE_LANGUAGE_ANSWER(
+        uzb = "Til o'zgardi!",
+        rus = "Язык изменен!",
+        eng = "Language changed!"
+    ),
     HELP_TEXT(
         uzb = "Yordam bo'limiga xush kelibsiz!👋 Siz quyidagi buyruqlardan foydalanishingiz mumkin:\n\n" +
                 "/start - Botni boshlash\n" +

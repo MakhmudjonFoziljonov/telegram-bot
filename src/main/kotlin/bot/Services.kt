@@ -438,8 +438,9 @@ class TelegramBotImpl(
             }
 
             activeUsers.forEach { userChatId ->
+                val userLanguage = userRepository.findLangByChatId(userChatId) ?: "UZB"
                 try {
-                    sendEndedOperatorsDetail(operatorChatId, userChatId, operatorLanguageEnum)
+                    sendEndedOperatorsDetail(operatorChatId, userChatId, Language.valueOf(userLanguage))
                     log.info(" Message sent: operator=$operatorChatId → user=$userChatId")
                 } catch (e: TelegramApiException) {
                     log.error(" Failed to send message to user $userChatId", e)
@@ -499,8 +500,12 @@ class TelegramBotImpl(
                     saveOperatorUserRelationIfNotExists(operatorChatId, foundUser)
 
                     notifyOperatorOnWorkStart(operatorChatId)
-                    sendUsersDetail(operatorChatId, foundUser, Language.UZB)
-                    sendOperatorsDetail(operatorChatId, foundUser, Language.UZB)
+
+                    val userLanguage = userRepository.findLangByChatId(foundUser) ?: "UZB"
+//                    val operatorLanguage = userRepository.findLangByChatId(operatorChatId) ?: "UZB"
+                    sendUsersDetail(operatorChatId, foundUser, operatorLanguageEnum)
+                    sendOperatorsDetail(operatorChatId, foundUser, Language.valueOf(userLanguage))
+
                     notifyClientOnOperatorJoin(foundUser)
 
                     log.info(" Operator $operatorChatId connected with user $foundUser ")
@@ -567,11 +572,13 @@ class TelegramBotImpl(
     ) {
         val userChatId = user.chatId
         val language = user.language
+        val startBtn = startBtn()
+        val userEndBtn = userEndBtn()
 
         when (text) {
             "/start" -> {
                 userRepository.updateUserEndedStatusToFalse(userChatId)
-                sendLocalizedMessage(userChatId, BotMessage.NO_OPERATOR_AVAILABLE, language)
+                sendLocalizedMessage(userChatId, BotMessage.NO_OPERATOR_AVAILABLE, language, userEndBtn)
                 enqueueUser(language, userChatId)
                 return
             }
@@ -581,18 +588,25 @@ class TelegramBotImpl(
                 return
             }
 
+//            "/lang" -> {
+//                val langInlineMarkup = changeLanguageInlineKeyboard()
+//                sendLocalizedMessage(userChatId, BotMessage.CHANGE_LANGUAGE_MESSAGE, language, langInlineMarkup)
+//                return
+//            }
+
             "/end" -> {
                 val activeOperator = userRepository.findOperatorByActiveSession(userChatId)
 
                 operatorUsersRepository.updateSession(null, userChatId)
                 userRepository.updateUserEndedStatus(userChatId)
-                sendLocalizedMessage(userChatId, BotMessage.END_SESSION, language)
+                sendLocalizedMessage(userChatId, BotMessage.END_SESSION, language, startBtn)
 
                 removeFromQueue(language, userChatId)
                 pendingMessages.remove(userChatId)
 
                 if (activeOperator != null) {
-                    sendEndedUsersDetail(activeOperator, userChatId, language)
+                    val operatorLanguage = userRepository.findLangByChatId(activeOperator) ?: "UZB"
+                    sendEndedUsersDetail(activeOperator, userChatId, Language.valueOf(operatorLanguage))
                     tryConnectNextUserToOperator(activeOperator)
                 }
                 return
@@ -613,6 +627,7 @@ class TelegramBotImpl(
         }
 
         val operatorChatIdV2 = userRepository.findAvailableOperatorByLanguage(user.language.name) ?: return
+        val operatorLanguage = userRepository.findLangByChatId(operatorChatIdV2) ?: "UZB"
 
         val operatorBusy = operatorUsersRepository.isOperatorBusy(operatorChatIdV2)
         if (operatorBusy) {
@@ -630,7 +645,7 @@ class TelegramBotImpl(
                 notifyOperatorOnWorkStart(operatorChatIdV2)
 
                 sendOperatorsDetail(operatorChatIdV2, userChatId, language)
-                sendUsersDetail(operatorChatIdV2, userChatId, language)
+                sendUsersDetail(operatorChatIdV2, userChatId, Language.valueOf(operatorLanguage))
                 deliverPendingMessagesToOperator(operatorChatIdV2, userChatId)
             } else {
 
@@ -652,7 +667,7 @@ class TelegramBotImpl(
         notifyOperatorOnWorkStart(operatorChatIdV2)
 
         sendOperatorsDetail(operatorChatIdV2, userChatId, language)
-        sendUsersDetail(operatorChatIdV2, userChatId, language)
+        sendUsersDetail(operatorChatIdV2, userChatId, Language.valueOf(operatorLanguage))
         sendMessageToOperator(operatorChatIdV2, text)
     }
 
@@ -676,8 +691,10 @@ class TelegramBotImpl(
             notifyClientOnOperatorJoin(nextUser)
             notifyOperatorOnWorkStart(operatorChatId)
 
-            sendOperatorsDetail(operatorChatId, nextUser, Language.UZB)
-            sendUsersDetail(operatorChatId, nextUser, Language.UZB)
+            val userLanguage = userRepository.findLangByChatId(nextUser) ?: "UZB"
+            val operatorLang = userRepository.findLangByChatId(operatorChatId) ?: "UZB"
+            sendOperatorsDetail(operatorChatId, nextUser, Language.valueOf(userLanguage))
+            sendUsersDetail(operatorChatId, nextUser, Language.valueOf(operatorLang))
 
             deliverPendingMessagesToOperator(operatorChatId, nextUser)
 
@@ -1113,6 +1130,30 @@ class TelegramBotImpl(
         return keyboardMarkup
     }
 
+    private fun userEndBtn(): ReplyKeyboardMarkup {
+        val keyboardMarkup = ReplyKeyboardMarkup()
+        keyboardMarkup.resizeKeyboard = true
+
+        val button = KeyboardButton().apply {
+            text = "/end"
+        }
+
+        val button1 = KeyboardButton().apply {
+            text = "/help"
+        }
+
+        val button2 = KeyboardButton().apply {
+            text = "/lang"
+        }
+
+        val row = KeyboardRow()
+        row.add(button)
+        row.add(button1)
+//        row.add(button2)
+        keyboardMarkup.keyboard = listOf(row)
+        return keyboardMarkup
+    }
+
     private fun beginBtn(): ReplyKeyboardMarkup {
         val keyboardMarkup = ReplyKeyboardMarkup()
         keyboardMarkup.resizeKeyboard = true
@@ -1125,6 +1166,31 @@ class TelegramBotImpl(
         keyboardMarkup.keyboard = listOf(row)
         return keyboardMarkup
     }
+
+    private fun startBtn(): ReplyKeyboardMarkup {
+        val keyboardMarkup = ReplyKeyboardMarkup()
+        keyboardMarkup.resizeKeyboard = true
+
+        val button = KeyboardButton().apply {
+            text = "/start"
+        }
+
+        val button1 = KeyboardButton().apply {
+            text = "/help"
+        }
+
+        val button2 = KeyboardButton().apply {
+            text = "/lang"
+        }
+
+        val row = KeyboardRow()
+        row.add(button)
+        row.add(button1)
+//        row.add(button2)
+        keyboardMarkup.keyboard = listOf(row)
+        return keyboardMarkup
+    }
+
 
     override fun sendMessage(text: SendMessage) {
         try {
@@ -1168,6 +1234,30 @@ class TelegramBotImpl(
         val enBtn = InlineKeyboardButton().apply {
             text = "ENG 🇬🇧"
             callbackData = "ENG_BUTTON"
+        }
+        val row: MutableList<InlineKeyboardButton> = ArrayList()
+        row.add(uzBtn)
+        row.add(ruBtn)
+        row.add(enBtn)
+        val keyboard: MutableList<MutableList<InlineKeyboardButton>> = ArrayList()
+        keyboard.add(row)
+
+        InlineKeyboardMarkup().keyboard = keyboard
+        return InlineKeyboardMarkup(keyboard)
+    }
+
+    private fun changeLanguageInlineKeyboard(): InlineKeyboardMarkup {
+        val uzBtn = InlineKeyboardButton().apply {
+            text = "UZB 🇺🇿"
+            callbackData = "CHANGE_UZB_BUTTON"
+        }
+        val ruBtn = InlineKeyboardButton().apply {
+            text = "RUS 🇷🇺"
+            callbackData = "CHANGE_RUS_BUTTON"
+        }
+        val enBtn = InlineKeyboardButton().apply {
+            text = "ENG 🇬🇧"
+            callbackData = "CHANGE_ENG_BUTTON"
         }
         val row: MutableList<InlineKeyboardButton> = ArrayList()
         row.add(uzBtn)
@@ -1233,6 +1323,31 @@ class TelegramBotImpl(
                     sendLocalizedMessage(chatIdStr, BotMessage.PHONE_CHANGE_CANCELLED, user.language)
                 }
             }
+
+//            "CHANGE_UZB_BUTTON" ->{
+//                removeInlineKeyboard(chatId, messageId)
+//                val user = userRepository.findByChatId(chatId.toString()) ?: throw UserNotFoundException()
+//                user.language = Language.UZB
+//                userRepository.save(user)
+//
+//                sendLocalizedMessage(chatIdStr, BotMessage.CHANGE_LANGUAGE_ANSWER, Language.UZB)
+//            }
+//            "CHANGE_RUS_BUTTON" ->{
+//                removeInlineKeyboard(chatId, messageId)
+//                val user = userRepository.findByChatId(chatId.toString()) ?: throw UserNotFoundException()
+//                user.language = Language.RUS
+//                userRepository.save(user)
+//
+//                sendLocalizedMessage(chatIdStr, BotMessage.CHANGE_LANGUAGE_ANSWER, Language.RUS)
+//            }
+//            "CHANGE_ENG_BUTTON" ->{
+//                removeInlineKeyboard(chatId, messageId)
+//                val user = userRepository.findByChatId(chatId.toString()) ?: throw UserNotFoundException()
+//                user.language = Language.ENG
+//                userRepository.save(user)
+//
+//                sendLocalizedMessage(chatIdStr, BotMessage.CHANGE_LANGUAGE_ANSWER, Language.ENG)
+//            }
 
             else -> {
                 removeInlineKeyboard(chatId, messageId)
@@ -1650,10 +1765,10 @@ class TelegramBotImpl(
             }
             return
         }
-//
-//        if (!isUserInQueue(language, userChatId)) {
-//            enqueueUser(language, userChatId)
-//        }
+
+        if (!isUserInQueue(language, userChatId)) {
+            enqueueUser(language, userChatId)
+        }
         sendLocalizedMessage(userChatId, BotMessage.NO_OPERATOR_AVAILABLE, language)
     }
 
@@ -1885,6 +2000,10 @@ class TelegramBotImpl(
         if (operatorChatId == null) {
             sendLocalizedMessage(userChatId, BotMessage.NO_OPERATOR_AVAILABLE, language)
             return
+        }
+
+        if (!isUserInQueue(language, userChatId)) {
+            enqueueUser(language, userChatId)
         }
 
         val hasActiveSession = operatorUsersRepository.hasActiveSession(operatorChatId, userChatId)
