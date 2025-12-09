@@ -50,6 +50,26 @@ enum class BotMessage(
         rus = "⚠ Это ваш текущий номер телефона. Отправьте другой номер для изменения.",
         eng = "⚠ This is your current phone number. Send a different number to change it."
     ),
+    USERS_NAME(
+        uzb = "ulandi!",
+        rus = "связался",
+        eng = "connected!"
+    ),
+    USERS_ENDED_NAME(
+        uzb = "suhbatni tugatti!",
+        rus = "закончил чат",
+        eng = "finished chat!"
+    ),
+    OPERATORS_NAME(
+        uzb = "operatori",
+        rus = "оператор",
+        eng = "operator!"
+    ),
+    OPERATORS_ENDED_NAME(
+        uzb = "suhbatni tugatti!",
+        rus = "закончил чат",
+        eng = "finished chat!"
+    ),
     WELCOME_MESSAGE(
         uzb = "Assalomu alaykum, hurmatli {name}!\n\nTilni tanlang!",
         rus = "Здравствуйте, уважаемый {name}!\n\nВыберите язык!",
@@ -93,9 +113,9 @@ enum class BotMessage(
         eng = "Thank you for your work!"
     ),
     NO_OPERATOR_AVAILABLE(
-        uzb = " Hozirda operator mavjud emas. Operatorning o'rtacha javob vaqti: 5 daq",
-        rus = " В данный момент оператор недоступен. Среднее время ответа оператора: 5 мин.",
-        eng = " No operator is available at the moment. The operator's average response time is 5 min."
+        uzb = " Savolingizni yozing. Operatorning o'rtacha javob vaqti: 5 daq",
+        rus = " Напишите свой вопрос.Среднее время ответа оператора: 5 мин.",
+        eng = " Write your question. The operator's average response time is 5 min."
     ),
     YES_TEXT(
         uzb = "Ha",

@@ -61,6 +61,9 @@ interface UserRepository : BaseRepository<User> {
     @Query(value = "SELECT u.language FROM users u WHERE chat_id = :chatId", nativeQuery = true)
     fun findLanguageByChatId(chatId: String): String?
 
+    @Query(value = "select u.name from users u where chat_id = :userChatId", nativeQuery = true)
+    fun findNameByChatId(userChatId: String): String?
+
     @Query(
         value = """
         select chat_id

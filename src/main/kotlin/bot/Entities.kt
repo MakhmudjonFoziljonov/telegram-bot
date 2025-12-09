@@ -41,8 +41,9 @@ class User(
     var languages: MutableSet<Language> = mutableSetOf(language),
 
     val userEnded: Boolean = false,
+    val name: String
 
-    ) : BaseEntity()
+) : BaseEntity()
 
 @Entity
 @Table(name = "operator_users")
