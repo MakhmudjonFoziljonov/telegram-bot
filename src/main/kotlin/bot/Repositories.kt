@@ -195,6 +195,15 @@ interface OperatorUsersRepository : JpaRepository<OperatorUsers, Long> {
         @Param("userChatId") userChatId: String
     ): OperatorUsers?
 
+    @Query(
+        value = "select ou.user_chat_id from operator_users ou " +
+                "where  operator_chat_id = :operatorChatId and session = true " +
+                "LIMIT 1", nativeQuery = true
+    )
+    fun findUserByOperatorChatId(
+        @Param("operatorChatId") operatorChatId: String,
+    ): String?
+
 
     @Query(
         value = """
