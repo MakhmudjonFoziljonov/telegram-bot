@@ -64,15 +64,6 @@ interface UserRepository : BaseRepository<User> {
     @Query(value = "select u.name from users u where chat_id = :userChatId", nativeQuery = true)
     fun findNameByChatId(userChatId: String): String?
 
-    @Query(
-        value = """
-        select chat_id
-          from users
-            where role = 'OPERATOR'
-            and language = :language
-    """, nativeQuery = true
-    )
-    fun findExactOperatorByLanguage(@Param("language") language: String): String?
 
     @Query(
         value = """
@@ -83,21 +74,6 @@ interface UserRepository : BaseRepository<User> {
     """, nativeQuery = true
     )
     fun findExactOperatorById(operatorId: Long): String?
-
-
-    @Query(
-        value = """
-        SELECT u.chat_id
-        FROM users u
-        JOIN user_languages ul ON u.id = ul.user_chat_id
-        WHERE  u.role = 'USER'
-        AND ul.languages = :language 
-        AND COALESCE(u.user_ended, false) = false
-    """,
-        nativeQuery = true
-    )
-    fun findUserByLanguage(language: String): List<String>
-
 
     @Modifying
     @Transactional
@@ -156,27 +132,6 @@ interface UserRepository : BaseRepository<User> {
     )
     fun findActiveUsersByOperator(operatorChatId: String): List<String>
 
-    @Query(
-        value = """
-        SELECT u.chat_id
-        FROM users u
-        JOIN user_languages ul ON u.id = ul.user_chat_id
-        WHERE u.role = 'USER'
-            AND ul.languages = :language
-            AND u.deleted = false
-            AND u.user_ended = false
-            AND NOT EXISTS (
-                SELECT 1 FROM operator_users ou
-                WHERE ou.user_chat_id = u.chat_id
-                AND ou.session = true
-            )
-        ORDER BY u.created_date ASC
-        LIMIT 1
-        """,
-        nativeQuery = true
-    )
-    fun findFirstWaitingUserByLanguage(language: String): String?
-
     @Modifying
     @Transactional
     @Query(
@@ -209,12 +164,6 @@ interface UserRepository : BaseRepository<User> {
     )
     fun updateOperatorEndedStatusToTrue(userChatId: String)
 
-    @Query(value = "select user_ended from users where chat_id = :userChatId", nativeQuery = true)
-    fun findUserEnded(userChatId: String): Boolean
-
-    @Query(value = "select user_ended from users where chat_id = :operatorChatId", nativeQuery = true)
-    fun findOperatorEnded(operatorChatId: String): Boolean
-
     @Query(
         """
     SELECT ou.operator_chat_id 
@@ -232,10 +181,6 @@ interface UserRepository : BaseRepository<User> {
     )
     fun checkOnOperator(@Param("chatId") chatId: String): Boolean
 
-    @Query(
-        value = "select u.phone_number from users u where u.chat_id = :chatIdStr and role = 'USER' ", nativeQuery = true
-    )
-    fun findPhoneByChatId(chatIdStr: String): String?
 }
 
 interface OperatorUsersRepository : JpaRepository<OperatorUsers, Long> {
@@ -249,11 +194,6 @@ interface OperatorUsersRepository : JpaRepository<OperatorUsers, Long> {
         @Param("operatorChatId") operatorChatId: String,
         @Param("userChatId") userChatId: String
     ): OperatorUsers?
-
-    @Modifying
-    @Transactional
-    @Query("UPDATE operator_users SET session = false WHERE id = :id", nativeQuery = true)
-    fun deactivateById(@Param("id") id: Long)
 
 
     @Query(
@@ -303,30 +243,6 @@ interface OperatorUsersRepository : JpaRepository<OperatorUsers, Long> {
 
     @Query(
         value = """
-            SELECT user_chat_id 
-            FROM operator_users
-            WHERE operator_chat_id = :operatorChatId
-            AND session = true
-            LIMIT 1
-        """,
-        nativeQuery = true
-    )
-    fun findCurrentUserByOperator(operatorChatId: String): String?
-
-    @Query(
-        value = """
-            SELECT operator_chat_id 
-            FROM operator_users
-            WHERE user_chat_id = :userChatId
-            AND session = true
-            LIMIT 1
-        """,
-        nativeQuery = true
-    )
-    fun findOperatorByUserChatId(userChatId: String): String?
-
-    @Query(
-        value = """
     SELECT COUNT(*) > 0 FROM operator_users
     WHERE operator_chat_id = :operatorChatId
       AND session = true
@@ -334,5 +250,7 @@ interface OperatorUsersRepository : JpaRepository<OperatorUsers, Long> {
         nativeQuery = true
     )
     fun isOperatorBusy(operatorChatId: String): Boolean
+}
 
+interface MessageMappingRepository : BaseRepository<MessageMapping> {
 }

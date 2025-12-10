@@ -537,7 +537,13 @@ class TelegramBotImpl(
                     }
                     activeUsers.forEach { userChatId ->
                         try {
-                            sendMessage(userChatId, text)
+                            val userEndBtn = userEndBtn()
+
+                            val sendMessage = SendMessage()
+                            sendMessage.chatId = userChatId
+                            sendMessage.text = text
+                            sendMessage.replyMarkup = userEndBtn
+                            execute(sendMessage)
                             log.info(" Message sent: operator=$operatorChatId → user=$userChatId")
                         } catch (e: TelegramApiException) {
                             log.error(" Failed to send message to user $userChatId", e)
@@ -1816,8 +1822,7 @@ class TelegramBotImpl(
     }
 
     private fun handleOperatorDocument(operator: User, message: Message, replyToMessageId: String?) {
-        val operatorId = userRepository.findExactOperatorByLanguage(operator.language.name)
-            ?: throw OperatorNotFoundException()
+        val operatorId = userRepository.findExactOperatorById(operator.id!!) ?: throw OperatorNotFoundException()
 
         userRepository.findByChatId(operatorId)?.let { op ->
             if (op.userEnded) {
@@ -1876,8 +1881,7 @@ class TelegramBotImpl(
         message: Message,
         replyToMessageId: String?
     ) {
-        val operatorId = userRepository.findExactOperatorByLanguage(operator.language.name)
-            ?: throw OperatorNotFoundException()
+        val operatorId = userRepository.findExactOperatorById(operator.id!!) ?: throw OperatorNotFoundException()
 
         userRepository.findByChatId(operatorId)?.let { op ->
             if (op.userEnded) {
@@ -2037,8 +2041,7 @@ class TelegramBotImpl(
         message: Message,
         replyToMessageId: String?
     ) {
-        val operatorId = userRepository.findExactOperatorByLanguage(operator.language.name)
-            ?: throw OperatorNotFoundException()
+        val operatorId = userRepository.findExactOperatorById(operator.id!!) ?: throw OperatorNotFoundException()
 
         userRepository.findByChatId(operatorId)?.let { op ->
             if (op.userEnded) {

@@ -8,6 +8,11 @@ enum class Role {
     OPERATOR, USER
 }
 
+enum class MessageSender {
+    USER,
+    OPERATOR
+}
+
 enum class ErrorCodes {
     USER_NOT_FOUND,
     OPERATOR_NOT_FOUND
@@ -18,6 +23,25 @@ enum class BotMessage(
     val rus: String,
     val eng: String
 ) {
+
+    MESSAGE_SEND_FAILED(
+        uzb = "Xabar yuborishda xatolik yuz berdi. Qaytadan urinib ko'ring.",
+        rus = "Ошибка при отправке сообщения. Попробуйте снова.",
+        eng = "Failed to send message. Please try again."
+    ),
+
+    REPLY_MESSAGE_SENT(
+        uzb = "Javob yuborildi",
+        rus = "Ответ отправлен",
+        eng = "Reply sent"
+    ),
+
+    NO_MESSAGE_TO_REPLY(
+        uzb = "Javob beriladigan xabar topilmadi",
+        rus = "Сообщение для ответа не найдено",
+        eng = "No message found to reply to"
+    ),
+
     START_WORK(
         uzb = "Ishingizda muvaffaqiyatlar tilaymiz! Mijozlarga xushmuomala bo'ling.",
         rus = "Желаем вам удачной работы!\n" +

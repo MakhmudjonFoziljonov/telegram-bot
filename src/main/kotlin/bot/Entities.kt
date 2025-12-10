@@ -58,8 +58,17 @@ class OperatorUsers(
 )
 
 @Entity
-@Table(name = "waiting_users")
-data class WaitingUserEntity(
-    @Id val chatId: String,
-    @Enumerated(EnumType.STRING) val language: Language,
-)
+@Table(name = "message_mappings")
+class MessageMapping(
+
+    var operatorChatId: String,
+    var userChatId: String,
+
+    var operatorMessageId: String,
+    var userMessageId: String,
+
+    @Enumerated(EnumType.STRING)
+    var sender: MessageSender,
+
+    var createdAt: Long = System.currentTimeMillis()
+) : BaseEntity()
