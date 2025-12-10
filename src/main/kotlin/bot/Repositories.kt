@@ -253,4 +253,6 @@ interface OperatorUsersRepository : JpaRepository<OperatorUsers, Long> {
 }
 
 interface MessageMappingRepository : BaseRepository<MessageMapping> {
+    fun findByOperatorMessageId(messageId: String): MessageMapping?
+    fun findByUserMessageId(messageId: String): MessageMapping?
 }

@@ -67,8 +67,5 @@ class MessageMapping(
     var operatorMessageId: String,
     var userMessageId: String,
 
-    @Enumerated(EnumType.STRING)
-    var sender: MessageSender,
-
     var createdAt: Long = System.currentTimeMillis()
 ) : BaseEntity()

@@ -33,10 +33,23 @@ interface TelegramBot {
     fun sendContactAnswerTextToUser(lang: String): String
 
     fun handleContact(message: Message)
-    fun handleOperatorMesage(operator: User, text: String)
+    fun handleOperatorMesage(
+        operator: User,
+        text: String,
+        operatorMessageId: String,
+        replyToMessageId: String? = null
+    )
+
+    fun handleRegularUserMessage(
+        user: User,
+        text: String,
+        chatId: String,
+        userMessageId: String,
+        replyToMessageId: String? = null
+    )
+
     fun handleCallbackQueryUser(callbackQuery: CallbackQuery)
     fun handleNewUser(chatId: String, text: String, message: Message)
-    fun handleRegularUserMessage(user: User, text: String, chatId: String)
     fun handleCallbackQuery(callbackQuery: CallbackQuery, mainLanguage: Language)
 
     fun saveUser(chatId: String, name: String)
@@ -82,7 +95,8 @@ private const val CALLBACK_LANGUAGE_CONFIRM = "LANG_CONFIRM"
 class TelegramBotImpl(
     private val botConfig: BotConfig,
     private val userRepository: UserRepository,
-    private val operatorUsersRepository: OperatorUsersRepository
+    private val operatorUsersRepository: OperatorUsersRepository,
+    private val messageMappingRepository: MessageMappingRepository
 
 ) : TelegramLongPollingBot(), TelegramBot {
 
@@ -103,6 +117,8 @@ class TelegramBotImpl(
             val text = message.text
             val chatId = message.chatId
             val chatIdStr = chatId.toString()
+            val messageId = message.messageId.toString()
+            val replyToMessageId = message.replyToMessage?.messageId?.toString()
 
             val user = userRepository.findByChatId(chatIdStr)
             if (user == null) {
@@ -120,9 +136,9 @@ class TelegramBotImpl(
             }
 
             if (user.role != Role.OPERATOR) {
-                handleRegularUserMessage(user, text, chatIdStr)
+                handleRegularUserMessage(user, text, chatIdStr, messageId, replyToMessageId)
             } else {
-                handleOperatorMesage(user, text)
+                handleOperatorMesage(user, text, messageId, replyToMessageId)
             }
 
         } else if (update.hasCallbackQuery()) {
@@ -365,16 +381,6 @@ class TelegramBotImpl(
     private fun isUserInQueue(language: Language, userChatId: String): Boolean =
         waitingQueues[language]?.contains(userChatId) ?: false
 
-    private fun getQueuePosition(language: Language, userChatId: String): Int {
-        val queue = waitingQueues[language] ?: return -1
-        var pos = 1
-        for (id in queue) {
-            if (id == userChatId) return pos
-            pos++
-        }
-        return -1
-    }
-
     private fun removeFromQueue(language: Language, userChatId: String): Boolean {
         val queue = waitingQueues[language] ?: return false
         return queue.remove(userChatId)
@@ -382,7 +388,6 @@ class TelegramBotImpl(
 
     private fun dequeueUser(language: Language): String? =
         waitingQueues[language]?.poll()
-
 
     private fun addPendingMessage(userChatId: String, text: String) {
         val q = pendingMessages.computeIfAbsent(userChatId) { ConcurrentLinkedQueue() }
@@ -423,7 +428,12 @@ class TelegramBotImpl(
         }
     }
 
-    override fun handleOperatorMesage(operator: User, text: String) {
+    override fun handleOperatorMesage(
+        operator: User,
+        text: String,
+        operatorMessageId: String,
+        replyToMessageId: String?
+    ) {
         val operatorLanguage = operator.language.name
         val operatorLanguageEnum = operator.language
         val operatorDbId = operator.id
@@ -543,7 +553,18 @@ class TelegramBotImpl(
                             sendMessage.chatId = userChatId
                             sendMessage.text = text
                             sendMessage.replyMarkup = userEndBtn
-                            execute(sendMessage)
+
+                            if (replyToMessageId != null) {
+                                val mapping = messageMappingRepository.findByOperatorMessageId(replyToMessageId)
+                                if (mapping != null) {
+                                    sendMessage.replyToMessageId = mapping.userMessageId.toInt()
+                                }
+                            }
+
+                            val sentMessage = execute(sendMessage)
+                            val userReceivedMessageId = sentMessage.messageId.toString()
+
+                            messageMappingSave(operatorChatId, userChatId, operatorMessageId, userReceivedMessageId)
                             log.info(" Message sent: operator=$operatorChatId → user=$userChatId")
                         } catch (e: TelegramApiException) {
                             log.error(" Failed to send message to user $userChatId", e)
@@ -575,6 +596,8 @@ class TelegramBotImpl(
         user: User,
         text: String,
         chatId: String,
+        userMessageId: String,
+        replyToMessageId: String?
     ) {
         val userChatId = user.chatId
         val language = user.language
@@ -622,7 +645,20 @@ class TelegramBotImpl(
         val activeOperator = userRepository.findOperatorByActiveSession(userChatId)
 
         if (activeOperator != null) {
-            sendMessageToOperator(activeOperator, text)
+            val sendMessage = SendMessage()
+            sendMessage.chatId = activeOperator
+            sendMessage.text = text
+
+            if (replyToMessageId != null) {
+                val mapping = messageMappingRepository.findByUserMessageId(replyToMessageId)
+                if (mapping != null) {
+                    sendMessage.replyToMessageId = mapping.operatorMessageId.toInt()
+                }
+            }
+            val sentMessage = execute(sendMessage)
+            val operatorReceivedMessageId = sentMessage.messageId.toString()
+
+            messageMappingSave(activeOperator, userChatId, operatorReceivedMessageId, userMessageId)
             return
         }
 
@@ -1460,7 +1496,11 @@ class TelegramBotImpl(
             val sendMessage = SendMessage()
             sendMessage.chatId = userChatId
             sendMessage.text =
-                name + " ${BotMessage.OPERATORS_NAME.getText(language)}" + " ${BotMessage.OPERATORS_ENDED_NAME.getText(language)}"
+                name + " ${BotMessage.OPERATORS_NAME.getText(language)}" + " ${
+                    BotMessage.OPERATORS_ENDED_NAME.getText(
+                        language
+                    )
+                }"
             try {
                 execute(sendMessage)
             } catch (e: TelegramApiException) {
@@ -2082,20 +2122,30 @@ class TelegramBotImpl(
                 sendPhoto.caption = caption
 
 //                if (replyToMessageId != null) {
-//                    val userMessageId = messageMappingRepository.findUserMessageId(
-//                        operatorId,
-//                        replyToMessageId
-//                    )
-
-//                    if (userMessageId != null) {
-//                        sendPhoto.replyToMessageId = userMessageId
+//                    val mapping = messageMappingRepository.findByOperatorMessageId(replyToMessageId)
+//                    if (mapping != null) {
+//                        sendPhoto.replyToMessageId = mapping.userMessageId.toInt()
 //                    }
 //                }
+
                 execute(sendPhoto)
                 log.info("Photo sent: operator=$operatorId → user=$userChatId")
             } catch (e: TelegramApiException) {
                 log.error("Failed to send photo to user $userChatId", e)
             }
         }
+    }
+
+    private fun messageMappingSave(
+        operatorChatId: String, userChatId: String,
+        operatorMessageId: String, userMessageId: String
+    ) {
+        val messageMapping = MessageMapping(
+            operatorChatId,
+            userChatId,
+            operatorMessageId,
+            userMessageId,
+        )
+        messageMappingRepository.save(messageMapping)
     }
 }
