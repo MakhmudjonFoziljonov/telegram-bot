@@ -21,15 +21,19 @@ class BaseEntity(
 )
 
 
-@Entity(name = "users")
+@Entity
+@Table(name = "users")
 class User(
     val chatId: String,
+    @Column(length = 15)
     var phoneNumber: String,
     var busy: Boolean,
 
     @Enumerated(EnumType.STRING)
+    @Column(length = 32)
     var language: Language = Language.UZB,
     @Enumerated(EnumType.STRING)
+    @Column(length = 32)
     var role: Role,
 
     @ElementCollection(fetch = FetchType.LAZY)
@@ -42,20 +46,15 @@ class User(
 
     val userEnded: Boolean = false,
     val name: String
-
 ) : BaseEntity()
 
 @Entity
 @Table(name = "operator_users")
 class OperatorUsers(
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    var id: Long? = null,
-
     var operatorChatId: String,
     var userChatId: String,
     var session: Boolean = true
-)
+) : BaseEntity()
 
 @Entity
 @Table(name = "message_mappings")
@@ -65,7 +64,40 @@ class MessageMapping(
     var userChatId: String,
 
     var operatorMessageId: String,
+    var message: String,
     var userMessageId: String,
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    var file: File? = null,
+
+
     var createdAt: Long = System.currentTimeMillis()
+) : BaseEntity()
+
+@Entity
+@Table(name = "pending_messages")
+class PendingMessages(
+    var userChatId: String,
+    @Column(nullable = false, columnDefinition = "text")
+    var message: String,
+
+    @Enumerated(EnumType.STRING)
+    @Column(length = 32)
+    val status: MessageStatus = MessageStatus.PENDING,
+
+    var createdAt: Long = System.currentTimeMillis()
+
+) : BaseEntity()
+
+@Entity
+@Table(name = "files")
+class File(
+    val name: String,
+    val fileId: String,
+    val extension: String,
+    val size: Int,
+    val path: String,
+
+    var createdAt: Long = System.currentTimeMillis()
+
 ) : BaseEntity()

@@ -1,6 +1,5 @@
 package bot
 
-import javassist.NotFoundException
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.RequestMapping
@@ -14,7 +13,7 @@ class UsersController(
 
     @GetMapping("change-role/{chatId}")
     fun changeRole(@PathVariable("chatId") chatId: String) {
-        val user = userRepository.findByChatId(chatId) ?: throw NotFoundException("User $chatId not found")
+        val user = userRepository.findByChatIdAndDeletedFalse(chatId) ?: throw UserNotFoundException()
         user.role = Role.OPERATOR
         userRepository.save(user)
     }

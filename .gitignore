@@ -32,7 +32,9 @@ out/
 /dist/
 /nbdist/
 /.nb-gradle/
-
+/attachments
+attachments
+attachments/
 ### VS Code ###
 .vscode/
 

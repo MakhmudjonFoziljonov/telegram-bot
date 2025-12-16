@@ -52,18 +52,7 @@ class BaseRepositoryImpl<T : BaseEntity>(
 
 interface UserRepository : BaseRepository<User> {
 
-    @Query(value = "SELECT * FROM users WHERE chat_id = :chatId", nativeQuery = true)
-    fun findByChatId(chatId: String): User?
-
-    @Query(value = "select u.language from users u where chat_id = :chatId", nativeQuery = true)
-    fun findLangByChatId(chatId: String): String?
-
-    @Query(value = "SELECT u.language FROM users u WHERE chat_id = :chatId", nativeQuery = true)
-    fun findLanguageByChatId(chatId: String): String?
-
-    @Query(value = "select u.name from users u where chat_id = :userChatId", nativeQuery = true)
-    fun findNameByChatId(userChatId: String): String?
-
+    fun findByChatIdAndDeletedFalse(chatId: String): User?
 
     @Query(
         value = """
@@ -183,7 +172,7 @@ interface UserRepository : BaseRepository<User> {
 
 }
 
-interface OperatorUsersRepository : JpaRepository<OperatorUsers, Long> {
+interface OperatorUsersRepository : BaseRepository<OperatorUsers> {
 
     @Query(
         value = "select * from operator_users " +
@@ -194,15 +183,6 @@ interface OperatorUsersRepository : JpaRepository<OperatorUsers, Long> {
         @Param("operatorChatId") operatorChatId: String,
         @Param("userChatId") userChatId: String
     ): OperatorUsers?
-
-    @Query(
-        value = "select ou.user_chat_id from operator_users ou " +
-                "where  operator_chat_id = :operatorChatId and session = true " +
-                "LIMIT 1", nativeQuery = true
-    )
-    fun findUserByOperatorChatId(
-        @Param("operatorChatId") operatorChatId: String,
-    ): String?
 
 
     @Query(
@@ -264,4 +244,23 @@ interface OperatorUsersRepository : JpaRepository<OperatorUsers, Long> {
 interface MessageMappingRepository : BaseRepository<MessageMapping> {
     fun findByOperatorMessageId(messageId: String): MessageMapping?
     fun findByUserMessageId(messageId: String): MessageMapping?
+
+}
+
+interface PendingMessagesRepository : BaseRepository<PendingMessages> {
+    fun findByUserChatIdAndStatus(
+        userChatId: String,
+        status: MessageStatus
+    ): List<PendingMessages>
+
+    @Modifying
+    @Transactional
+    @Query(value = "update pending_messages set status = 'DELIVERED' " +
+            "where user_chat_id = :userChatId and status = 'PENDING' ", nativeQuery = true)
+    fun updatePendingMessagesByChatId(userChatId: String, delivered: MessageStatus)
+
+}
+
+interface FileRepository : BaseRepository<File> {
+
 }

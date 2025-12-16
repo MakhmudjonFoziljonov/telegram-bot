@@ -7,5 +7,3 @@ data class OperatorLanguageState(
     var requiredCount: Int = 0,
     val selectedLanguages: MutableSet<Language> = mutableSetOf()
 )
-
-data class WaitingUser(val chatId: String, val language: Language)

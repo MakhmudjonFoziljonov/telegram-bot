@@ -32,12 +32,8 @@ dependencies {
     implementation("com.fasterxml.jackson.module:jackson-module-kotlin")
     implementation("org.jetbrains.kotlin:kotlin-reflect")
     implementation("org.springframework.boot:spring-boot-starter-data-jpa")
-    implementation("org.springframework.boot:spring-boot-starter-data-jdbc")
     implementation("org.telegram:telegrambots:5.7.1")
-    implementation("org.springframework.boot:spring-boot-starter-validation")
-    implementation("com.vdurmont:emoji-java:5.1.1")
 
-    compileOnly("org.projectlombok:lombok")
     runtimeOnly("org.postgresql:postgresql")
     annotationProcessor("org.projectlombok:lombok")
     testImplementation("org.springframework.boot:spring-boot-starter-test")

@@ -1,0 +1,23 @@
+server:
+  port: 8085
+spring:
+  application:
+    name: telegram-bot
+
+  datasource:
+    url: jdbc:postgresql://localhost:5433/bot
+    username: postgres
+    password: root
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    hibernate.ddl-auto: update
+    properties.hibernate.dialect: org.hibernate.dialect.PostgreSQLDialect
+
+telegram.bot:
+  username: call_center_operators_bot
+  name: operatorBot
+  token: 7690744107:AAEGJSr3CxeIDQSJyQ4pNU2mQVzM4HY1nI0
+
+
+
