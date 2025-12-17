@@ -86,7 +86,7 @@ interface CallBackQueryService {
 interface MessageSendingService {
     fun sendMessageWithContactButton(chatId: String, text: String)
     fun sendMessage(chatId: String, text: String)
-    fun sendMessageToOperator(operatorChatId: String, text: String)
+    fun sendMessageToOperator(operatorChatId: String, text: String): String
     fun sendEndedOperatorsDetail(operatorChatId: String, userChatId: String, language: Language)
     fun sendMessageWithBeginBtn(beginBtn: ReplyKeyboardMarkup, operatorId: String, text: String)
     fun sendLocalizedMessage(
@@ -160,7 +160,7 @@ interface QueueService {
     fun isUserInQueue(language: Language, userChatId: String): Boolean
     fun removeFromQueue(language: Language, userChatId: String): Boolean
     fun addPendingMessage(userChatId: String, text: String)
-    fun deliverPendingMessagesToOperator(operatorChatId: String, userChatId: String)
+    fun deliverPendingMessagesToOperator(operatorChatId: String, userChatId: String, messageId: String)
     fun getPendingPhoneChange(chatId: String): String?
     fun removePendingPhoneChange(chatId: String)
     fun addPendingPhoneChange(chatId: String, normalizePhoneNumber: String)
@@ -369,7 +369,8 @@ class MessageMappingServiceImpl(
 @Service
 class QueueServiceImpl(
     private val messageSendingService: MessageSendingService,
-    private val pendingMessagesRepository: PendingMessagesRepository
+    private val pendingMessagesRepository: PendingMessagesRepository,
+    private val messageMappingRepository: MessageMappingRepository
 ) : QueueService {
 
     private val log = LoggerFactory.getLogger(QueueServiceImpl::class.java)
@@ -404,18 +405,28 @@ class QueueServiceImpl(
         )
     }
 
-    override fun deliverPendingMessagesToOperator(operatorChatId: String, userChatId: String) {
+    override fun deliverPendingMessagesToOperator(operatorChatId: String, userChatId: String, messageId: String) {
         val pendingMessages = pendingMessagesRepository.findByUserChatIdAndStatus(userChatId, MessageStatus.PENDING)
         if (pendingMessages.isEmpty()) return
 
         pendingMessages.forEach { msg ->
             try {
-                messageSendingService.sendMessageToOperator(operatorChatId, msg.message)
+                val sendMessageId = messageSendingService.sendMessageToOperator(operatorChatId, msg.message)
+                messageMappingRepository.save(
+                    MessageMapping(
+                        operatorChatId,
+                        userChatId,
+                        messageId,
+                        msg.message,
+                        sendMessageId
+                    )
+                )
             } catch (e: TelegramApiException) {
                 log.error("Failed to deliver pending message from $userChatId to operator $operatorChatId", e)
             }
         }
         pendingMessagesRepository.updatePendingMessagesByChatId(userChatId, MessageStatus.DELIVERED)
+
     }
 
     override fun getPendingPhoneChange(chatId: String): String? {
@@ -463,11 +474,12 @@ class MessageSendingServiceImpl(
         }
     }
 
-    override fun sendMessageToOperator(operatorChatId: String, text: String) {
+    override fun sendMessageToOperator(operatorChatId: String, text: String): String {
         try {
-            absSender.execute(SendMessage(operatorChatId, text))
+            return absSender.execute(SendMessage(operatorChatId, text)).messageId.toString()
         } catch (e: TelegramApiException) {
             log.error("Error sending operator", e)
+            return ""
         }
     }
 
@@ -887,7 +899,7 @@ class MessageSendingServiceImpl(
         editMessageText.text = text
         try {
             absSender.execute(editMessageText)
-        }catch (e: TelegramApiException) {
+        } catch (e: TelegramApiException) {
             log.error(" Error sending edited message", e)
         }
     }
@@ -1066,7 +1078,7 @@ class OperatorServiceImpl(
 
                 try {
                     userRepository.updateBusyByChatId(operatorChatId)
-                    queueService.deliverPendingMessagesToOperator(operatorChatId, foundUser)
+                    queueService.deliverPendingMessagesToOperator(operatorChatId, foundUser, messageId)
                     userService.saveOperatorUserRelationIfNotExists(operatorChatId, foundUser)
 
                     notificationService.notifyOperatorOnWorkStart(operatorChatId)
@@ -1996,7 +2008,7 @@ class UserServiceImpl(
                     userChatId,
                     operatorLanguage
                 )
-                queueService.deliverPendingMessagesToOperator(operatorChatIdV2, userChatId)
+                queueService.deliverPendingMessagesToOperator(operatorChatIdV2, userChatId, messageId)
             } else {
 
                 saveOperatorUserRelationIfNotExists(operatorChatIdV2, queuedUser)
@@ -2004,7 +2016,7 @@ class UserServiceImpl(
                 notificationService.notifyClientOnOperatorJoin(queuedUser)
                 notificationService.notifyOperatorOnWorkStart(operatorChatIdV2)
 
-                queueService.deliverPendingMessagesToOperator(operatorChatIdV2, queuedUser)
+                queueService.deliverPendingMessagesToOperator(operatorChatIdV2, queuedUser, messageId)
 
                 queueService.enqueueUser(language, userChatId)
             }
@@ -2086,7 +2098,7 @@ class UserServiceImpl(
             messageSendingService.sendOperatorsDetail(operatorChatId, nextUser, userLanguage)
             messageSendingService.sendUsersDetail(operatorChatId, nextUser, operatorLang)
 
-            queueService.deliverPendingMessagesToOperator(operatorChatId, nextUser)
+            queueService.deliverPendingMessagesToOperator(operatorChatId, nextUser, "")
 
             log.info("Operator $operatorChatId automatically connected to next user $nextUser")
         } else {
