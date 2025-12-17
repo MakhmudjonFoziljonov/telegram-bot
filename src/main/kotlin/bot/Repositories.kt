@@ -257,7 +257,7 @@ interface PendingMessagesRepository : BaseRepository<PendingMessages> {
     @Transactional
     @Query(value = "update pending_messages set status = 'DELIVERED' " +
             "where user_chat_id = :userChatId and status = 'PENDING' ", nativeQuery = true)
-    fun updatePendingMessagesByChatId(userChatId: String, delivered: MessageStatus)
+    fun updatePendingMessagesByChatId(userChatId: String)
 
 }
 

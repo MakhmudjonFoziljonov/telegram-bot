@@ -24,6 +24,7 @@ class BaseEntity(
 @Entity
 @Table(name = "users")
 class User(
+    @Column(unique = true)
     val chatId: String,
     @Column(length = 15)
     var phoneNumber: String,

@@ -5,9 +5,11 @@ import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
+import org.springframework.data.domain.AuditorAware
 import org.telegram.telegrambots.meta.TelegramBotsApi
 import org.telegram.telegrambots.meta.exceptions.TelegramApiException
 import org.telegram.telegrambots.updatesreceivers.DefaultBotSession
+import java.util.*
 
 @Configuration
 class BotConfig(
@@ -37,4 +39,10 @@ class BotInitializer(
         }
         return api
     }
+}
+
+@Configuration
+class EntityAuditConfig {
+    @Bean
+    fun userIdAuditorAware() = AuditorAware<Long> { Optional.empty() } // securitydan id olinadi
 }
