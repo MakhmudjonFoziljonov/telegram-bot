@@ -9,7 +9,6 @@ import org.telegram.telegrambots.meta.exceptions.TelegramApiException
 
 @Component
 class BotConstants {
-
     val commands = listOf(
         BotCommand("start", "Start bot"),
         BotCommand("help", "Help menu"),

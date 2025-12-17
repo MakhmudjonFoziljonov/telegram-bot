@@ -104,7 +104,6 @@ interface UserRepository : BaseRepository<User> {
         WHERE u.role = 'OPERATOR'
             AND u.deleted = false      
             AND ul.languages = :language
-            AND u.user_ended = false
         ORDER BY u.created_date ASC
         LIMIT 1
     """, nativeQuery = true
@@ -184,6 +183,11 @@ interface OperatorUsersRepository : BaseRepository<OperatorUsers> {
         @Param("userChatId") userChatId: String
     ): OperatorUsers?
 
+    @Modifying
+    @Transactional
+    @Query("UPDATE operator_users SET session = false WHERE id = :id", nativeQuery = true)
+    fun deactivateById(@Param("id") id: Long)
+
 
     @Query(
         value = """
@@ -262,5 +266,5 @@ interface PendingMessagesRepository : BaseRepository<PendingMessages> {
 }
 
 interface FileRepository : BaseRepository<File> {
-
+    fun findCurrentUserByOperator(operatorChatId: String): String?
 }

@@ -21,8 +21,7 @@ class BaseEntity(
 )
 
 
-@Entity
-@Table(name = "users")
+@Entity(name = "users")
 class User(
     @Column(unique = true)
     val chatId: String,
